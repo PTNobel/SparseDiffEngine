@@ -63,9 +63,9 @@ const char *test_wsum_hess_prod_axis_zero_no_zeros(void)
      */
     int expected_i[12] = {1, 2, 1, 2, 3, 4, 3, 4, 5, 6, 5, 6};
 
-    mu_assert("vals fail", cmp_double_array(p->wsum_hess->x, expected_x, 12));
-    mu_assert("rows fail", cmp_int_array(p->wsum_hess->p, expected_p, 9));
-    mu_assert("cols fail", cmp_int_array(p->wsum_hess->i, expected_i, 12));
+    mu_assert("vals fail", cmp_values(p->wsum_hess, expected_x, 12));
+    mu_assert("sparsity fail",
+              cmp_sparsity(p->wsum_hess, expected_p, expected_i, 8, 12));
 
     free_expr(p);
     return 0;
@@ -75,7 +75,7 @@ const char *test_wsum_hess_prod_axis_zero_mixed_zeros(void)
 {
     /* x is 5x3 variable, global index 1, total 16 vars
      * x = [1, 1, 1, 1, 1, 2, 0, 3, 4, 5, 1, 0, 0, 2, 3] (column-major)
-     * Matrix (column-major):
+     * matrix (column-major):
      *     [1, 2, 1]
      *     [1, 0, 0]
      *     [1, 3, 0]
@@ -183,9 +183,9 @@ const char *test_wsum_hess_prod_axis_zero_mixed_zeros(void)
         }
     }
 
-    mu_assert("rows fail", cmp_int_array(p->wsum_hess->p, expected_p, 17));
-    mu_assert("cols fail", cmp_int_array(p->wsum_hess->i, expected_i, 75));
-    mu_assert("vals fail", cmp_double_array(p->wsum_hess->x, expected_x, 75));
+    mu_assert("sparsity fail",
+              cmp_sparsity(p->wsum_hess, expected_p, expected_i, 16, 75));
+    mu_assert("vals fail", cmp_values(p->wsum_hess, expected_x, 75));
 
     free_expr(p);
     return 0;
@@ -196,7 +196,7 @@ const char *test_wsum_hess_prod_axis_zero_one_zero(void)
     /* Test with a column that has exactly 1 zero
      * x is 2x2 variable, global index 1, total 5 vars
      * x = [1.0, 1.0, 2.0, 0.0] (column-major)
-     * Matrix (column-major):
+     * matrix (column-major):
      *     [1, 2]
      *     [1, 0]
      *
@@ -245,9 +245,9 @@ const char *test_wsum_hess_prod_axis_zero_one_zero(void)
      */
     int expected_i[8] = {1, 2, 1, 2, 3, 4, 3, 4};
 
-    mu_assert("vals fail", cmp_double_array(p->wsum_hess->x, expected_x, 8));
-    mu_assert("rows fail", cmp_int_array(p->wsum_hess->p, expected_p, 6));
-    mu_assert("cols fail", cmp_int_array(p->wsum_hess->i, expected_i, 8));
+    mu_assert("vals fail", cmp_values(p->wsum_hess, expected_x, 8));
+    mu_assert("sparsity fail",
+              cmp_sparsity(p->wsum_hess, expected_p, expected_i, 5, 8));
 
     free_expr(p);
     return 0;

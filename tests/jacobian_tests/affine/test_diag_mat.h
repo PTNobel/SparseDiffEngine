@@ -10,7 +10,7 @@ const char *test_diag_mat_jacobian_variable(void)
 {
     /* diag_mat of a 2x2 variable (4 vars total)
      * Diagonal indices in column-major: [0, 3]
-     * Jacobian is 2x4 CSR: row 0 has col 0, row 1 has col 3 */
+     * Jacobian is 2x4 CSR_matrix: row 0 has col 0, row 1 has col 3 */
     double u[4] = {1.0, 2.0, 3.0, 4.0};
     expr *var = new_variable(2, 2, 0, 4);
     expr *dm = new_diag_mat(var);
@@ -23,9 +23,9 @@ const char *test_diag_mat_jacobian_variable(void)
     int expected_p[3] = {0, 1, 2};
     int expected_i[2] = {0, 3};
 
-    mu_assert("diag_mat jac vals", cmp_double_array(dm->jacobian->x, expected_x, 2));
-    mu_assert("diag_mat jac p", cmp_int_array(dm->jacobian->p, expected_p, 3));
-    mu_assert("diag_mat jac i", cmp_int_array(dm->jacobian->i, expected_i, 2));
+    mu_assert("vals fail", cmp_values(dm->jacobian, expected_x, 2));
+    mu_assert("sparsity fail",
+              cmp_sparsity(dm->jacobian, expected_p, expected_i, 2, 2));
 
     free_expr(dm);
     return 0;
@@ -49,12 +49,12 @@ const char *test_diag_mat_jacobian_of_log(void)
     dm->eval_jacobian(dm);
 
     double expected_x[2] = {1.0, 0.25};
+    int expected_p[3] = {0, 1, 2};
     int expected_i[2] = {0, 3};
 
-    mu_assert("diag_mat log jac vals",
-              cmp_double_array(dm->jacobian->x, expected_x, 2));
-    mu_assert("diag_mat log jac cols",
-              cmp_int_array(dm->jacobian->i, expected_i, 2));
+    mu_assert("vals fail", cmp_values(dm->jacobian, expected_x, 2));
+    mu_assert("sparsity fail",
+              cmp_sparsity(dm->jacobian, expected_p, expected_i, 2, 2));
 
     free_expr(dm);
     return 0;

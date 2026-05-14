@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include "atoms/non_elementwise_full_dom.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <math.h>
@@ -76,14 +77,14 @@ static void jacobian_init_impl(expr *node)
     /* if x is a variable */
     if (x->var_id != NOT_A_VARIABLE)
     {
-        node->jacobian = new_csr_matrix(node->size, node->n_vars, x->size);
+        CSR_matrix *jac = new_CSR_matrix(node->size, node->n_vars, x->size);
 
         /* set row pointers (each row has d1 nnzs) */
         for (int row = 0; row < x->d2; row++)
         {
-            node->jacobian->p[row] = row * x->d1;
+            jac->p[row] = row * x->d1;
         }
-        node->jacobian->p[x->d2] = x->size;
+        jac->p[x->d2] = x->size;
 
         /* set column indices */
         for (int col = 0; col < x->d2; col++)
@@ -91,9 +92,10 @@ static void jacobian_init_impl(expr *node)
             int start = col * x->d1;
             for (int i = 0; i < x->d1; i++)
             {
-                node->jacobian->i[start + i] = x->var_id + start + i;
+                jac->i[start + i] = x->var_id + start + i;
             }
         }
+        node->jacobian = new_sparse_matrix(jac);
     }
     else
     {
@@ -154,8 +156,7 @@ static void wsum_hess_init_impl(expr *node)
     {
         /* Hessian has block diagonal structure: d2 blocks of size d1 x d1 */
         int nnz = x->d2 * x->d1 * x->d1;
-        node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, nnz);
-        CSR_Matrix *H = node->wsum_hess;
+        CSR_matrix *H = new_CSR_matrix(node->n_vars, node->n_vars, nnz);
 
         /* fill row pointers for the variable's rows (block diagonal) */
         for (int i = 0; i < x->size; i++)
@@ -184,6 +185,7 @@ static void wsum_hess_init_impl(expr *node)
                 }
             }
         }
+        node->wsum_hess = new_sparse_matrix(H);
     }
     else
     {

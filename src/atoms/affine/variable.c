@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include "atoms/affine.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <stdlib.h>
 #include <string.h>
@@ -27,14 +28,15 @@ static void forward(expr *node, const double *u)
 
 static void jacobian_init_impl(expr *node)
 {
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, node->size);
+    CSR_matrix *jac = new_CSR_matrix(node->size, node->n_vars, node->size);
     for (int j = 0; j < node->size; j++)
     {
-        node->jacobian->p[j] = j;
-        node->jacobian->i[j] = j + node->var_id;
-        node->jacobian->x[j] = 1.0;
+        jac->p[j] = j;
+        jac->i[j] = j + node->var_id;
+        jac->x[j] = 1.0;
     }
-    node->jacobian->p[node->size] = node->size;
+    jac->p[node->size] = node->size;
+    node->jacobian = new_sparse_matrix(jac);
 }
 
 static void eval_jacobian(expr *node)
@@ -46,7 +48,7 @@ static void eval_jacobian(expr *node)
 static void wsum_hess_init_impl(expr *node)
 {
     /* Variables have zero Hessian */
-    node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, 0);
+    node->wsum_hess = new_sparse_matrix_alloc(node->n_vars, node->n_vars, 0);
 }
 
 static void wsum_hess_eval(expr *node, const double *w)

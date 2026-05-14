@@ -13,7 +13,7 @@ static int is_close(double a, double b)
     return fabs(a - b) <= fmax(ABS_TOL, REL_TOL * fmax(fabs(a), fabs(b)));
 }
 
-static void csr_to_dense(const CSR_Matrix *A, double *dense)
+static void csr_to_dense(const CSR_matrix *A, double *dense)
 {
     for (int row = 0; row < A->m; row++)
     {
@@ -76,7 +76,7 @@ int check_jacobian_num(expr *node, const double *u, double h)
     node->forward(node, u);
 
     double *J_analytical = calloc((size_t) m * n, sizeof(double));
-    csr_to_dense(node->jacobian, J_analytical);
+    csr_to_dense(node->jacobian->to_csr(node->jacobian), J_analytical);
 
     int result = 1;
     for (int i = 0; i < m * n; i++)
@@ -98,9 +98,9 @@ int check_jacobian_num(expr *node, const double *u, double h)
     return result;
 }
 
-/* Compute g = J^T w where J is CSR (m x n) and w has m entries.
+/* Compute g = J^T w where J is CSR_matrix (m x n) and w has m entries.
  * Result written into g (size n), which must be zero-initialized. */
-static void csr_transpose_mult_vec(const CSR_Matrix *J, const double *w, double *g)
+static void csr_transpose_mult_vec(const CSR_matrix *J, const double *w, double *g)
 {
     for (int row = 0; row < J->m; row++)
     {
@@ -127,6 +127,12 @@ double *numerical_wsum_hess(expr *node, const double *u, const double *w, double
 
     memcpy(u_work, u, n * sizeof(double));
 
+    /* Hoist the CSR_matrix view once. For sparse_matrix (the only type used by tests
+       that reach here), csr->x aliases node->jacobian->x, so eval_jacobian
+       writes inside the loop update jac->x in place. A PD-backed Jacobian
+       would need a per-iteration to_csr refresh; not exercised today. */
+    CSR_matrix *jac = node->jacobian->to_csr(node->jacobian);
+
     for (int j = 0; j < n; j++)
     {
         /* g(u + h*e_j) */
@@ -134,14 +140,14 @@ double *numerical_wsum_hess(expr *node, const double *u, const double *w, double
         node->forward(node, u_work);
         node->eval_jacobian(node);
         memset(g_plus, 0, n * sizeof(double));
-        csr_transpose_mult_vec(node->jacobian, w, g_plus);
+        csr_transpose_mult_vec(jac, w, g_plus);
 
         /* g(u - h*e_j) */
         u_work[j] = u[j] - h;
         node->forward(node, u_work);
         node->eval_jacobian(node);
         memset(g_minus, 0, n * sizeof(double));
-        csr_transpose_mult_vec(node->jacobian, w, g_minus);
+        csr_transpose_mult_vec(jac, w, g_minus);
 
         u_work[j] = u[j];
 
@@ -171,7 +177,7 @@ int check_wsum_hess(expr *node, const double *u, const double *w, double h)
     node->eval_wsum_hess(node, w);
 
     double *H_ana = calloc((size_t) n * n, sizeof(double));
-    csr_to_dense(node->wsum_hess, H_ana);
+    csr_to_dense(node->wsum_hess->to_csr(node->wsum_hess), H_ana);
 
     int result = 1;
     for (int i = 0; i < n * n; i++)

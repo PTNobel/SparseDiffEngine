@@ -17,6 +17,7 @@
  */
 #include "atoms/affine.h"
 #include "subexpr.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +33,7 @@ static void forward(expr *node, const double *u)
 static void jacobian_init_impl(expr *node)
 {
     /* Zero jacobian: size x n_vars with 0 nonzeros. */
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, 0);
+    node->jacobian = new_sparse_matrix_alloc(node->size, node->n_vars, 0);
 }
 
 static void eval_jacobian(expr *node)
@@ -43,7 +44,7 @@ static void eval_jacobian(expr *node)
 static void wsum_hess_init_impl(expr *node)
 {
     /* Zero Hessian: n_vars x n_vars with 0 nonzeros. */
-    node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, 0);
+    node->wsum_hess = new_sparse_matrix_alloc(node->n_vars, node->n_vars, 0);
 }
 
 static void eval_wsum_hess(expr *node, const double *w)

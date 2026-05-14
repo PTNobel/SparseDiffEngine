@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include "atoms/non_elementwise_full_dom.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <math.h>
@@ -71,13 +72,14 @@ static void jacobian_init_impl(expr *node)
     /* if x is a variable */
     if (x->var_id != NOT_A_VARIABLE)
     {
-        node->jacobian = new_csr_matrix(1, node->n_vars, x->size);
-        node->jacobian->p[0] = 0;
-        node->jacobian->p[1] = x->size;
+        CSR_matrix *jac = new_CSR_matrix(1, node->n_vars, x->size);
+        jac->p[0] = 0;
+        jac->p[1] = x->size;
         for (int j = 0; j < x->size; j++)
         {
-            node->jacobian->i[j] = x->var_id + j;
+            jac->i[j] = x->var_id + j;
         }
+        node->jacobian = new_sparse_matrix(jac);
     }
     else
     {
@@ -96,21 +98,22 @@ static void eval_jacobian(expr *node)
     /* if x is a variable */
     if (x->var_id != NOT_A_VARIABLE)
     {
+        double *jx = node->jacobian->x;
         if (num_of_zeros == 0)
         {
             for (int j = 0; j < x->size; j++)
             {
-                node->jacobian->x[j] = node->value[0] / x->value[j];
+                jx[j] = node->value[0] / x->value[j];
             }
         }
         else if (num_of_zeros == 1)
         {
-            memset(node->jacobian->x, 0, sizeof(double) * x->size);
-            node->jacobian->x[pnode->zero_index] = pnode->prod_nonzero;
+            memset(jx, 0, sizeof(double) * x->size);
+            jx[pnode->zero_index] = pnode->prod_nonzero;
         }
         else
         {
-            memset(node->jacobian->x, 0, sizeof(double) * x->size);
+            memset(jx, 0, sizeof(double) * x->size);
         }
     }
     else
@@ -128,21 +131,21 @@ static void wsum_hess_init_impl(expr *node)
     /* if x is a variable */
     if (x->var_id != NOT_A_VARIABLE)
     {
-        /* allocate n_vars x n_vars CSR matrix with dense block */
+        /* allocate n_vars x n_vars CSR_matrix matrix with dense block */
         int block_size = x->size;
         int nnz = block_size * block_size;
-        node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, nnz);
+        CSR_matrix *hess = new_CSR_matrix(node->n_vars, node->n_vars, nnz);
 
         /* fill row pointers for the dense block */
         for (int i = 0; i < block_size; i++)
         {
-            node->wsum_hess->p[x->var_id + i] = i * block_size;
+            hess->p[x->var_id + i] = i * block_size;
         }
 
         /* fill row pointers for rows after the block */
         for (int i = x->var_id + block_size; i <= node->n_vars; i++)
         {
-            node->wsum_hess->p[i] = nnz;
+            hess->p[i] = nnz;
         }
 
         /* fill column indices for the dense block */
@@ -150,9 +153,10 @@ static void wsum_hess_init_impl(expr *node)
         {
             for (int j = 0; j < block_size; j++)
             {
-                node->wsum_hess->i[i * block_size + j] = x->var_id + j;
+                hess->i[i * block_size + j] = x->var_id + j;
             }
         }
+        node->wsum_hess = new_sparse_matrix(hess);
     }
     else
     {

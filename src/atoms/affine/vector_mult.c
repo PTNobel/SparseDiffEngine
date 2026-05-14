@@ -59,7 +59,7 @@ static void jacobian_init_impl(expr *node)
     jacobian_init(x);
 
     /* same sparsity as child */
-    node->jacobian = new_csr_copy_sparsity(x->jacobian);
+    node->jacobian = x->jacobian->copy_sparsity(x->jacobian);
 }
 
 static void eval_jacobian(expr *node)
@@ -67,17 +67,11 @@ static void eval_jacobian(expr *node)
     expr *x = node->left;
     const double *a = ((vector_mult_expr *) node)->param_source->value;
 
-    /* evaluate x */
+    /* evaluate jacobian of child */
     x->eval_jacobian(x);
 
-    /* row-wise scale child's jacobian */
-    for (int i = 0; i < node->size; i++)
-    {
-        for (int j = x->jacobian->p[i]; j < x->jacobian->p[i + 1]; j++)
-        {
-            node->jacobian->x[j] = a[i] * x->jacobian->x[j];
-        }
-    }
+    /* row-wise scale child's jacobian: diag(a) @ Jx */
+    x->jacobian->DA_fill_values(a, x->jacobian, node->jacobian);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -88,8 +82,9 @@ static void wsum_hess_init_impl(expr *node)
     wsum_hess_init(x);
 
     /* same sparsity as child */
-    node->wsum_hess = new_csr_copy_sparsity(x->wsum_hess);
+    node->wsum_hess = x->wsum_hess->copy_sparsity(x->wsum_hess);
 
+    /* workspace for storing scaled weights */
     node->work->dwork = (double *) SP_MALLOC(node->size * sizeof(double));
 }
 
@@ -107,7 +102,8 @@ static void eval_wsum_hess(expr *node, const double *w)
     x->eval_wsum_hess(x, node->work->dwork);
 
     /* copy values from child to this node */
-    memcpy(node->wsum_hess->x, x->wsum_hess->x, x->wsum_hess->nnz * sizeof(double));
+    memcpy(node->wsum_hess->x, x->wsum_hess->x,
+           node->wsum_hess->nnz * sizeof(double));
 }
 
 static void free_type_data(expr *node)

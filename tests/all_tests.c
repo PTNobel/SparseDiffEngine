@@ -55,17 +55,20 @@
 #include "jacobian_tests/other/test_prod_axis_zero.h"
 #include "jacobian_tests/other/test_quad_form.h"
 #include "numerical_diff/test_numerical_diff.h"
+#include "old-code/test_old_permuted_dense.h"
 #include "problem/test_param_broadcast.h"
 #include "problem/test_param_prob.h"
 #include "problem/test_problem.h"
 #include "utils/test_cblas.h"
-#include "utils/test_coo_matrix.h"
+#include "utils/test_COO_matrix.h"
 #include "utils/test_csc_matrix.h"
 #include "utils/test_csr_csc_conversion.h"
 #include "utils/test_csr_matrix.h"
 #include "utils/test_linalg_sparse_matmuls.h"
 #include "utils/test_linalg_utils_matmul_chain_rule.h"
 #include "utils/test_matrix.h"
+#include "utils/test_matrix_BTA.h"
+#include "utils/test_permuted_dense.h"
 #include "wsum_hess/affine/test_broadcast.h"
 #include "wsum_hess/affine/test_convolve.h"
 #include "wsum_hess/affine/test_diag_mat.h"
@@ -102,7 +105,10 @@
 #endif /* PROFILE_ONLY */
 
 #ifdef PROFILE_ONLY
+#include "profiling/profile_BTA_pd_csr_vs_csc.h"
 #include "profiling/profile_left_matmul.h"
+#include "profiling/profile_log_reg.h"
+#include "profiling/profile_trimmed_log_reg.h"
 #endif /* PROFILE_ONLY */
 
 int main(void)
@@ -218,12 +224,15 @@ int main(void)
     mu_run_test(test_jacobian_left_matmul_log, tests_run);
     mu_run_test(test_jacobian_left_matmul_log_matrix, tests_run);
     mu_run_test(test_jacobian_left_matmul_exp_composite, tests_run);
+    mu_run_test(test_jacobian_left_matmul_pd_from_composite_child, tests_run);
+    mu_run_test(test_jacobian_left_matmul_pd_param, tests_run);
     mu_run_test(test_jacobian_right_matmul_log, tests_run);
     mu_run_test(test_jacobian_right_matmul_log_vector, tests_run);
     mu_run_test(test_jacobian_matmul, tests_run);
     mu_run_test(test_jacobian_convolve, tests_run);
     mu_run_test(test_jacobian_convolve_composite, tests_run);
     mu_run_test(test_jacobian_transpose, tests_run);
+    mu_run_test(test_jacobian_transpose_pd_preserved, tests_run);
     mu_run_test(test_diag_mat_jacobian_variable, tests_run);
     mu_run_test(test_diag_mat_jacobian_of_log, tests_run);
     mu_run_test(test_upper_tri_jacobian_variable, tests_run);
@@ -284,6 +293,7 @@ int main(void)
     mu_run_test(test_wsum_hess_left_matmul, tests_run);
     mu_run_test(test_wsum_hess_left_matmul_matrix, tests_run);
     mu_run_test(test_wsum_hess_left_matmul_exp_composite, tests_run);
+    mu_run_test(test_wsum_hess_left_matmul_dense_matrix_exp, tests_run);
     mu_run_test(test_wsum_hess_matmul, tests_run);
     mu_run_test(test_wsum_hess_matmul_yx, tests_run);
     mu_run_test(test_wsum_hess_right_matmul, tests_run);
@@ -351,11 +361,48 @@ int main(void)
     mu_run_test(test_csr_to_coo, tests_run);
     mu_run_test(test_csr_to_coo_lower_triangular, tests_run);
     mu_run_test(test_refresh_lower_triangular_coo, tests_run);
-    mu_run_test(test_dense_matrix_mult_vec, tests_run);
-    mu_run_test(test_dense_matrix_mult_vec_blocks, tests_run);
-    mu_run_test(test_sparse_vs_dense_mult_vec, tests_run);
-    mu_run_test(test_dense_matrix_trans, tests_run);
-    mu_run_test(test_sparse_vs_dense_mult_vec_blocks, tests_run);
+    mu_run_test(test_pd_mult_vec_basic, tests_run);
+    mu_run_test(test_pd_mult_vec_blocks, tests_run);
+    mu_run_test(test_sparse_vs_pd_mult_vec, tests_run);
+    mu_run_test(test_pd_trans_full_block, tests_run);
+    mu_run_test(test_sparse_vs_pd_mult_vec_blocks, tests_run);
+    mu_run_test(test_pd_operator_block_left_mult_vec, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_basic, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_empty, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_full, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_single_row, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_single_col, tests_run);
+    mu_run_test(test_DA_pd_fill_values, tests_run);
+    mu_run_test(test_ATA_pd_alloc, tests_run);
+    mu_run_test(test_ATDA_pd_fill_values, tests_run);
+    mu_run_test(test_permuted_dense_times_csc, tests_run);
+    mu_run_test(test_permuted_dense_times_csc_no_active, tests_run);
+    mu_run_test(test_permuted_dense_to_csr_lazy, tests_run);
+    mu_run_test(test_permuted_dense_col_inv, tests_run);
+    mu_run_test(test_permuted_dense_index, tests_run);
+    mu_run_test(test_permuted_dense_promote, tests_run);
+    mu_run_test(test_permuted_dense_broadcast_scalar, tests_run);
+    mu_run_test(test_permuted_dense_broadcast_row, tests_run);
+    mu_run_test(test_permuted_dense_broadcast_col, tests_run);
+    mu_run_test(test_permuted_dense_diag_vec, tests_run);
+    mu_run_test(test_permuted_dense_BTA_matching_row_perm, tests_run);
+    mu_run_test(test_permuted_dense_BTA_empty_overlap, tests_run);
+    mu_run_test(test_permuted_dense_BTA_partial_overlap, tests_run);
+    mu_run_test(test_permuted_dense_BTDA_decomposition, tests_run);
+    mu_run_test(test_BTA_pd_csc_matches_csr, tests_run);
+    mu_run_test(test_BA_pd_matrices_pd_pd_full_block_B, tests_run);
+    mu_run_test(test_BA_pd_matrices_pd_pd_general_B, tests_run);
+    mu_run_test(test_BA_pd_matrices_pd_csc, tests_run);
+    mu_run_test(test_BA_pd_matrices_fast_path, tests_run);
+    mu_run_test(test_BTA_pd_csr_basic, tests_run);
+    mu_run_test(test_BTA_pd_csr_leaf_variable, tests_run);
+    mu_run_test(test_BTA_pd_csr_no_overlap, tests_run);
+    mu_run_test(test_BTA_csr_pd_basic, tests_run);
+    mu_run_test(test_BTA_csr_pd_leaf_variable, tests_run);
+    mu_run_test(test_BTA_csr_pd_no_overlap, tests_run);
+    mu_run_test(test_BTDA_matrices_pd_pd, tests_run);
+    mu_run_test(test_BTDA_matrices_csr_pd, tests_run);
+    mu_run_test(test_BTDA_matrices_pd_csr, tests_run);
     mu_run_test(test_YT_kron_I, tests_run);
     mu_run_test(test_YT_kron_I_larger, tests_run);
     mu_run_test(test_I_kron_X, tests_run);
@@ -401,6 +448,9 @@ int main(void)
 #ifdef PROFILE_ONLY
     printf("\n--- Profiling Tests ---\n");
     mu_run_test(profile_left_matmul, tests_run);
+    mu_run_test(profile_log_reg, tests_run);
+    mu_run_test(profile_trimmed_log_reg, tests_run);
+    mu_run_test(profile_BTA_pd_csr_vs_csc, tests_run);
 #endif /* PROFILE_ONLY */
 
     printf("\n=== All %d tests passed ===\n", tests_run);

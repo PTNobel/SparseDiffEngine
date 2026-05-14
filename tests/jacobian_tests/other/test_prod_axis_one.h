@@ -37,14 +37,14 @@ const char *test_jacobian_prod_axis_one(void)
     jacobian_init(p);
     p->eval_jacobian(p);
 
-    /* CSR format for 3x10 Jacobian with row-strided structure */
+    /* CSR_matrix format for 3x10 Jacobian with row-strided structure */
     double expected_Ax[9] = {28.0, 7.0, 4.0, 40.0, 16.0, 10.0, 54.0, 27.0, 18.0};
     int expected_Ap[4] = {0, 3, 6, 9};
     int expected_Ai[9] = {1, 4, 7, 2, 5, 8, 3, 6, 9};
 
-    mu_assert("vals fail", cmp_double_array(p->jacobian->x, expected_Ax, 9));
-    mu_assert("rows fail", cmp_int_array(p->jacobian->p, expected_Ap, 4));
-    mu_assert("cols fail", cmp_int_array(p->jacobian->i, expected_Ai, 9));
+    mu_assert("vals fail", cmp_values(p->jacobian, expected_Ax, 9));
+    mu_assert("sparsity fail",
+              cmp_sparsity(p->jacobian, expected_Ap, expected_Ai, 3, 9));
 
     free_expr(p);
     return 0;
@@ -80,14 +80,14 @@ const char *test_jacobian_prod_axis_one_one_zero(void)
     jacobian_init(p);
     p->eval_jacobian(p);
 
-    /* CSR format for 3x10 Jacobian with row-strided structure */
+    /* CSR_matrix format for 3x10 Jacobian with row-strided structure */
     double expected_Ax[9] = {28.0, 7.0, 4.0, 0.0, 16.0, 0.0, 54.0, 27.0, 18.0};
     int expected_Ap[4] = {0, 3, 6, 9};
     int expected_Ai[9] = {1, 4, 7, 2, 5, 8, 3, 6, 9};
 
-    mu_assert("vals fail", cmp_double_array(p->jacobian->x, expected_Ax, 9));
-    mu_assert("rows fail", cmp_int_array(p->jacobian->p, expected_Ap, 4));
-    mu_assert("cols fail", cmp_int_array(p->jacobian->i, expected_Ai, 9));
+    mu_assert("vals fail", cmp_values(p->jacobian, expected_Ax, 9));
+    mu_assert("sparsity fail",
+              cmp_sparsity(p->jacobian, expected_Ap, expected_Ai, 3, 9));
 
     free_expr(p);
     return 0;

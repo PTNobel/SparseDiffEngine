@@ -83,9 +83,10 @@ static void problem_lagrange_hess_fill_sparsity(problem *prob, int *iwork)
     int *cols = iwork;
     int *col_to_pos = iwork; /* reused after qsort */
     int nnz = 0;
-    CSR_Matrix *H_obj = prob->objective->wsum_hess;
-    CSR_Matrix *H_c;
-    CSR_Matrix *H = prob->lagrange_hessian;
+    CSR_matrix *H_obj =
+        prob->objective->wsum_hess->to_csr(prob->objective->wsum_hess);
+    CSR_matrix *H_c;
+    CSR_matrix *H = prob->lagrange_hessian;
     H->p[0] = 0;
 
     // ----------------------------------------------------------------------
@@ -100,7 +101,7 @@ static void problem_lagrange_hess_fill_sparsity(problem *prob, int *iwork)
         /* gather columns from constraint hessians */
         for (int c_idx = 0; c_idx < prob->n_constraints; c_idx++)
         {
-            H_c = constrs[c_idx]->wsum_hess;
+            H_c = constrs[c_idx]->wsum_hess->to_csr(constrs[c_idx]->wsum_hess);
             int c_len = H_c->p[row + 1] - H_c->p[row];
             memcpy(cols + count, H_c->i + H_c->p[row], c_len * sizeof(int));
             count += c_len;
@@ -146,7 +147,7 @@ static void problem_lagrange_hess_fill_sparsity(problem *prob, int *iwork)
     /* map constraint hessian entries */
     for (int c_idx = 0; c_idx < prob->n_constraints; c_idx++)
     {
-        H_c = constrs[c_idx]->wsum_hess;
+        H_c = constrs[c_idx]->wsum_hess->to_csr(constrs[c_idx]->wsum_hess);
         for (int row = 0; row < H->m; row++)
         {
             for (int idx = H->p[row]; idx < H->p[row + 1]; idx++)
@@ -176,37 +177,39 @@ void problem_init_jacobian(problem *prob)
     {
         expr *c = prob->constraints[i];
         jacobian_init(c);
-        nnz += c->jacobian->nnz;
+        CSR_matrix *Jc = c->jacobian->to_csr(c->jacobian);
+        nnz += Jc->nnz;
 
         if (c->is_affine(c))
         {
-            prob->stats.nnz_affine += c->jacobian->nnz;
+            prob->stats.nnz_affine += Jc->nnz;
         }
         else
         {
-            prob->stats.nnz_nonlinear += c->jacobian->nnz;
+            prob->stats.nnz_nonlinear += Jc->nnz;
         }
     }
 
-    prob->jacobian = new_csr_matrix(prob->total_constraint_size, prob->n_vars, nnz);
+    prob->jacobian = new_CSR_matrix(prob->total_constraint_size, prob->n_vars, nnz);
 
     /* set sparsity pattern of jacobian */
-    CSR_Matrix *H = prob->jacobian;
+    CSR_matrix *H = prob->jacobian;
     H->p[0] = 0;
     int row_offset = 0;
     int nnz_offset = 0;
     for (int i = 0; i < prob->n_constraints; i++)
     {
         expr *c = prob->constraints[i];
+        CSR_matrix *Jc = c->jacobian->to_csr(c->jacobian);
 
-        for (int r = 1; r <= c->jacobian->m; r++)
+        for (int r = 1; r <= Jc->m; r++)
         {
-            H->p[row_offset + r] = nnz_offset + c->jacobian->p[r];
+            H->p[row_offset + r] = nnz_offset + Jc->p[r];
         }
 
-        memcpy(H->i + nnz_offset, c->jacobian->i, c->jacobian->nnz * sizeof(int));
-        row_offset += c->jacobian->m;
-        nnz_offset += c->jacobian->nnz;
+        memcpy(H->i + nnz_offset, Jc->i, Jc->nnz * sizeof(int));
+        row_offset += Jc->m;
+        nnz_offset += Jc->nnz;
     }
     assert(nnz_offset == nnz);
 
@@ -231,7 +234,7 @@ void problem_init_hessian(problem *prob)
         nnz += prob->constraints[i]->wsum_hess->nnz;
     }
 
-    prob->lagrange_hessian = new_csr_matrix(prob->n_vars, prob->n_vars, nnz);
+    prob->lagrange_hessian = new_CSR_matrix(prob->n_vars, prob->n_vars, nnz);
     memset(prob->lagrange_hessian->x, 0, nnz * sizeof(double)); /* affine shortcut */
     prob->stats.nnz_hessian = nnz;
     prob->hess_idx_map = (int *) SP_MALLOC(nnz * sizeof(int));
@@ -248,7 +251,7 @@ void problem_init_jacobian_coo(problem *prob)
     problem_init_jacobian(prob);
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
-    prob->jacobian_coo = new_coo_matrix(prob->jacobian);
+    prob->jacobian_coo = new_COO_matrix(prob->jacobian);
     clock_gettime(CLOCK_MONOTONIC, &timer.end);
     prob->stats.time_init_derivatives += GET_ELAPSED_SECONDS(timer);
 }
@@ -259,7 +262,7 @@ void problem_init_hessian_coo_lower_triangular(problem *prob)
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
     prob->lagrange_hessian_coo =
-        new_coo_matrix_lower_triangular(prob->lagrange_hessian);
+        new_COO_matrix_lower_triangular(prob->lagrange_hessian);
     clock_gettime(CLOCK_MONOTONIC, &timer.end);
     prob->stats.time_init_derivatives += GET_ELAPSED_SECONDS(timer);
 }
@@ -342,10 +345,10 @@ void free_problem(problem *prob)
     /* Free allocated arrays */
     free(prob->constraint_values);
     free(prob->gradient_values);
-    free_csr_matrix(prob->jacobian);
-    free_csr_matrix(prob->lagrange_hessian);
-    free_coo_matrix(prob->jacobian_coo);
-    free_coo_matrix(prob->lagrange_hessian_coo);
+    free_CSR_matrix(prob->jacobian);
+    free_CSR_matrix(prob->lagrange_hessian);
+    free_COO_matrix(prob->jacobian_coo);
+    free_COO_matrix(prob->lagrange_hessian_coo);
     free(prob->hess_idx_map);
 
     /* Release expression references (decrements refcount) */
@@ -466,7 +469,7 @@ void problem_gradient(problem *prob)
 
     /* copy sparse jacobian to dense gradient */
     memset(prob->gradient_values, 0, prob->n_vars * sizeof(double));
-    CSR_Matrix *jac = prob->objective->jacobian;
+    CSR_matrix *jac = prob->objective->jacobian->to_csr(prob->objective->jacobian);
     for (int k = jac->p[0]; k < jac->p[1]; k++)
     {
         prob->gradient_values[jac->i[k]] = jac->x[k];
@@ -482,13 +485,12 @@ void problem_jacobian(problem *prob)
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
     bool first_call = !prob->jacobian_called;
 
-    CSR_Matrix *J = prob->jacobian;
+    CSR_matrix *J = prob->jacobian;
     int nnz_offset = 0;
 
     for (int i = 0; i < prob->n_constraints; i++)
     {
         expr *c = prob->constraints[i];
-
         if (!first_call && c->is_affine(c))
         {
             /* skip evaluation for affine constraints after first call */
@@ -537,21 +539,22 @@ void problem_hessian(problem *prob, double obj_w, const double *w)
     // ------------------------------------------------------------------------
     //           assemble Lagrange hessian using index map
     // ------------------------------------------------------------------------
-    CSR_Matrix *H = prob->lagrange_hessian;
+    CSR_matrix *H = prob->lagrange_hessian;
     int *idx_map = prob->hess_idx_map;
 
     /* zero out hessian before adding contribution from obj and constraints */
     memset(H->x, 0, H->nnz * sizeof(double));
 
     /* accumulate objective function */
-    accumulator(obj->wsum_hess, idx_map, H->x);
+    accumulator(obj->wsum_hess->x, obj->wsum_hess->nnz, idx_map, H->x);
     offset = obj->wsum_hess->nnz;
 
     /* accumulate constraint functions */
     for (int i = 0; i < prob->n_constraints; i++)
     {
-        accumulator(constrs[i]->wsum_hess, idx_map + offset, H->x);
-        offset += constrs[i]->wsum_hess->nnz;
+        matrix *c_hess = constrs[i]->wsum_hess;
+        accumulator(c_hess->x, c_hess->nnz, idx_map + offset, H->x);
+        offset += c_hess->nnz;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &timer.end);

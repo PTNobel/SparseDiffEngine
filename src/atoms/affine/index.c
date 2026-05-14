@@ -64,21 +64,10 @@ static void jacobian_init_impl(expr *node)
     index_expr *idx = (index_expr *) node;
     jacobian_init(x);
 
-    CSR_Matrix *Jx = x->jacobian;
-    CSR_Matrix *J = new_csr_matrix(node->size, node->n_vars, Jx->nnz);
-
-    /* set sparsity pattern */
-    J->p[0] = 0;
-    for (int i = 0; i < idx->n_idxs; i++)
-    {
-        int row = idx->indices[i];
-        int len = Jx->p[row + 1] - Jx->p[row];
-        memcpy(J->i + J->p[i], Jx->i + Jx->p[row], len * sizeof(int));
-        J->p[i + 1] = J->p[i] + len;
-    }
-
-    J->nnz = J->p[idx->n_idxs];
-    node->jacobian = J;
+    /* allocate sparsity pattern for the matrix consisting of rows
+       'idx->indices' of the child's Jacobian */
+    node->jacobian =
+        x->jacobian->index_alloc(x->jacobian, idx->indices, idx->n_idxs);
 }
 
 static void eval_jacobian(expr *node)
@@ -87,14 +76,9 @@ static void eval_jacobian(expr *node)
     index_expr *idx = (index_expr *) node;
     x->eval_jacobian(x);
 
-    CSR_Matrix *J = node->jacobian;
-    CSR_Matrix *Jx = x->jacobian;
-
-    for (int i = 0; i < idx->n_idxs; i++)
-    {
-        int len = J->p[i + 1] - J->p[i];
-        memcpy(J->x + J->p[i], Jx->x + Jx->p[idx->indices[i]], len * sizeof(double));
-    }
+    /* copy values of the selected rows into the preallocated output */
+    x->jacobian->index_fill_values(x->jacobian, idx->indices, idx->n_idxs,
+                                   node->jacobian);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -113,8 +97,7 @@ static void wsum_hess_init_impl(expr *node)
        many numerical zeros in child->wsum_hess that are actually
        structural zeros, but we do not try to exploit that sparsity
        right now. */
-    CSR_Matrix *Hx = x->wsum_hess;
-    node->wsum_hess = new_csr_copy_sparsity(Hx);
+    node->wsum_hess = x->wsum_hess->copy_sparsity(x->wsum_hess);
 }
 
 static void eval_wsum_hess(expr *node, const double *w)
@@ -142,7 +125,8 @@ static void eval_wsum_hess(expr *node, const double *w)
 
     /* evalute hessian of child */
     x->eval_wsum_hess(x, node->work->dwork);
-    memcpy(node->wsum_hess->x, x->wsum_hess->x, x->wsum_hess->nnz * sizeof(double));
+    memcpy(node->wsum_hess->x, x->wsum_hess->x,
+           node->wsum_hess->nnz * sizeof(double));
 }
 
 static bool is_affine(const expr *node)

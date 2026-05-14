@@ -17,7 +17,6 @@
  */
 #include "atoms/affine.h"
 #include "subexpr.h"
-#include "utils/mini_numpy.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <stdio.h>
@@ -71,119 +70,21 @@ static void jacobian_init_impl(expr *node)
 {
     expr *x = node->left;
     jacobian_init(x);
+
+    /* allocate sparsity for the broadcast output; output type matches child's. */
     broadcast_expr *bcast = (broadcast_expr *) node;
-    int total_nnz;
-
-    // --------------------------------------------------------------------
-    //                     count number of nonzeros
-    // --------------------------------------------------------------------
-    if (bcast->type == BROADCAST_ROW)
-    {
-        /* Row broadcast: (1, n) -> (m, n) */
-        total_nnz = x->jacobian->nnz * node->d1;
-    }
-    else if (bcast->type == BROADCAST_COL)
-    {
-        /* Column broadcast: (m, 1) -> (m, n) */
-        total_nnz = x->jacobian->nnz * node->d2;
-    }
-    else
-    {
-        /* Scalar broadcast: (1, 1) -> (m, n) */
-        total_nnz = x->jacobian->nnz * node->size;
-    }
-
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, total_nnz);
-
-    // ---------------------------------------------------------------------
-    //                 fill sparsity pattern
-    // ---------------------------------------------------------------------
-    CSR_Matrix *Jx = x->jacobian;
-    CSR_Matrix *J = node->jacobian;
-
-    if (bcast->type == BROADCAST_ROW)
-    {
-        J->nnz = 0;
-        for (int i = 0; i < node->d2; i++)
-        {
-            int nnz_in_row = Jx->p[i + 1] - Jx->p[i];
-
-            /* copy columns indices */
-            tile_int(J->i + J->nnz, Jx->i + Jx->p[i], nnz_in_row, node->d1);
-
-            /* set row pointers */
-            for (int rep = 0; rep < node->d1; rep++)
-            {
-                J->p[i * node->d1 + rep] = J->nnz;
-                J->nnz += nnz_in_row;
-            }
-        }
-        assert(J->nnz == total_nnz);
-        J->p[node->size] = total_nnz;
-    }
-    else if (bcast->type == BROADCAST_COL)
-    {
-        /* copy column indices */
-        tile_int(J->i, Jx->i, Jx->nnz, node->d2);
-
-        /* set row pointers */
-        int offset = 0;
-        for (int i = 0; i < node->d2; i++)
-        {
-            for (int j = 0; j < node->d1; j++)
-            {
-                int nnz_in_row = Jx->p[j + 1] - Jx->p[j];
-                J->p[i * node->d1 + j] = offset;
-                offset += nnz_in_row;
-            }
-        }
-        assert(offset == total_nnz);
-        J->p[node->size] = total_nnz;
-    }
-    else
-    {
-        /* copy column indices */
-        tile_int(J->i, Jx->i, Jx->nnz, node->size);
-
-        /* set row pointers */
-        int offset = 0;
-        int nnz = Jx->p[1] - Jx->p[0];
-        for (int i = 0; i < node->size; i++)
-        {
-            J->p[i] = offset;
-            offset += nnz;
-        }
-        assert(offset == total_nnz);
-        J->p[node->size] = total_nnz;
-    }
+    node->jacobian =
+        x->jacobian->broadcast_alloc(x->jacobian, bcast->type, node->d1, node->d2);
 }
 
 static void eval_jacobian(expr *node)
 {
     node->left->eval_jacobian(node->left);
 
+    /* fill values into the preallocated output. */
     broadcast_expr *bcast = (broadcast_expr *) node;
-    CSR_Matrix *Jx = node->left->jacobian;
-    CSR_Matrix *J = node->jacobian;
-
-    if (bcast->type == BROADCAST_ROW)
-    {
-        J->nnz = 0;
-        for (int i = 0; i < node->d2; i++)
-        {
-            int nnz_in_row = Jx->p[i + 1] - Jx->p[i];
-            tile_double(J->x + J->nnz, Jx->x + Jx->p[i], nnz_in_row, node->d1);
-            J->nnz += nnz_in_row * node->d1;
-        }
-    }
-    else if (bcast->type == BROADCAST_COL)
-    {
-        tile_double(J->x, Jx->x, Jx->nnz, node->d2);
-    }
-    else
-    {
-        tile_double(J->x, Jx->x, Jx->nnz, node->size);
-    }
+    node->left->jacobian->broadcast_fill_values(node->left->jacobian, bcast->type,
+                                                node->d1, node->d2, node->jacobian);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -192,7 +93,7 @@ static void wsum_hess_init_impl(expr *node)
     wsum_hess_init(x);
 
     /* Same sparsity as child - weights get summed */
-    node->wsum_hess = new_csr_copy_sparsity(x->wsum_hess);
+    node->wsum_hess = x->wsum_hess->copy_sparsity(x->wsum_hess);
 
     /* allocate space for weight vector */
     node->work->dwork = SP_MALLOC(node->size * sizeof(double));
@@ -239,7 +140,8 @@ static void eval_wsum_hess(expr *node, const double *w)
     }
 
     x->eval_wsum_hess(x, node->work->dwork);
-    memcpy(node->wsum_hess->x, x->wsum_hess->x, x->wsum_hess->nnz * sizeof(double));
+    memcpy(node->wsum_hess->x, x->wsum_hess->x,
+           node->wsum_hess->nnz * sizeof(double));
 }
 
 static bool is_affine(const expr *node)

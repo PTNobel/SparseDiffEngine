@@ -18,7 +18,7 @@ const char *test_jacobian_convolve(void)
      *    [3, 2, 1],
      *    [0, 3, 2],
      *    [0, 0, 3]]
-     * stored in CSR with nnz = 9, shape 5 x 3. */
+     * stored in CSR_matrix with nnz = 9, shape 5 x 3. */
     double kernel[3] = {1.0, 2.0, 3.0};
     expr *kernel_param = new_parameter(3, 1, PARAM_FIXED, 3, kernel);
     expr *x = new_variable(3, 1, 0, 3);
@@ -37,12 +37,9 @@ const char *test_jacobian_convolve(void)
     int expected_i[9] = {0, 0, 1, 0, 1, 2, 1, 2, 2};
     double expected_x[9] = {1.0, 2.0, 1.0, 3.0, 2.0, 1.0, 3.0, 2.0, 3.0};
 
-    mu_assert("Convolve Jacobian row pointers incorrect",
-              cmp_int_array(y->jacobian->p, expected_p, 6));
-    mu_assert("Convolve Jacobian column indices incorrect",
-              cmp_int_array(y->jacobian->i, expected_i, 9));
-    mu_assert("Convolve Jacobian values incorrect",
-              cmp_double_array(y->jacobian->x, expected_x, 9));
+    mu_assert("sparsity fail",
+              cmp_sparsity(y->jacobian, expected_p, expected_i, 5, 9));
+    mu_assert("vals fail", cmp_values(y->jacobian, expected_x, 9));
 
     free_expr(y);
     return 0;

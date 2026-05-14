@@ -40,7 +40,7 @@ static void jacobian_init_impl(expr *node)
     jacobian_init(x);
 
     /* same sparsity pattern as child */
-    node->jacobian = new_csr_copy_sparsity(x->jacobian);
+    node->jacobian = x->jacobian->copy_sparsity(x->jacobian);
 }
 
 static void eval_jacobian(expr *node)
@@ -49,10 +49,9 @@ static void eval_jacobian(expr *node)
     node->left->eval_jacobian(node->left);
 
     /* negate values only (sparsity pattern set in jacobian_init_impl) */
-    CSR_Matrix *child_jac = node->left->jacobian;
-    for (int k = 0; k < child_jac->nnz; k++)
+    for (int k = 0; k < node->left->jacobian->nnz; k++)
     {
-        node->jacobian->x[k] = -child_jac->x[k];
+        node->jacobian->x[k] = -node->left->jacobian->x[k];
     }
 }
 
@@ -63,9 +62,8 @@ static void wsum_hess_init_impl(expr *node)
     /* initialize child's wsum_hess */
     wsum_hess_init(x);
 
-    /* same sparsity pattern as child */
-    CSR_Matrix *child_hess = x->wsum_hess;
-    node->wsum_hess = new_csr_copy_sparsity(child_hess);
+    /* same sparsity pattern as child (polymorphic copy) */
+    node->wsum_hess = x->wsum_hess->copy_sparsity(x->wsum_hess);
 }
 
 static void eval_wsum_hess(expr *node, const double *w)
@@ -74,10 +72,9 @@ static void eval_wsum_hess(expr *node, const double *w)
     node->left->eval_wsum_hess(node->left, w);
 
     /* negate values (sparsity pattern set in wsum_hess_init_impl) */
-    CSR_Matrix *child_hess = node->left->wsum_hess;
-    for (int k = 0; k < child_hess->nnz; k++)
+    for (int k = 0; k < node->left->wsum_hess->nnz; k++)
     {
-        node->wsum_hess->x[k] = -child_hess->x[k];
+        node->wsum_hess->x[k] = -node->left->wsum_hess->x[k];
     }
 }
 

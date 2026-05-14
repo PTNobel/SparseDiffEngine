@@ -39,12 +39,9 @@ const char *test_wsum_hess_log(void)
     int expected_p[8] = {0, 0, 0, 1, 2, 3, 3, 3};
     int expected_i[3] = {2, 3, 4};
 
-    mu_assert("vals incorrect",
-              cmp_double_array(log_node->wsum_hess->x, expected_x, 3));
-    mu_assert("rows incorrect",
-              cmp_int_array(log_node->wsum_hess->p, expected_p, 8));
-    mu_assert("cols incorrect",
-              cmp_int_array(log_node->wsum_hess->i, expected_i, 3));
+    mu_assert("vals fail", cmp_values(log_node->wsum_hess, expected_x, 3));
+    mu_assert("sparsity fail",
+              cmp_sparsity(log_node->wsum_hess, expected_p, expected_i, 7, 3));
 
     free_expr(log_node);
 
@@ -58,7 +55,7 @@ const char *test_wsum_hess_exp_composite(void)
     double Ax[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     int Ai[] = {0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4};
     int Ap[] = {0, 5, 10, 15};
-    CSR_Matrix *A_csr = new_csr_matrix(3, 5, 15);
+    CSR_matrix *A_csr = new_CSR_matrix(3, 5, 15);
     memcpy(A_csr->x, Ax, 15 * sizeof(double));
     memcpy(A_csr->i, Ai, 15 * sizeof(int));
     memcpy(A_csr->p, Ap, 4 * sizeof(int));
@@ -70,7 +67,7 @@ const char *test_wsum_hess_exp_composite(void)
     mu_assert("check_wsum_hess failed",
               check_wsum_hess(exp_node, u_vals, w, NUMERICAL_DIFF_DEFAULT_H));
 
-    free_csr_matrix(A_csr);
+    free_CSR_matrix(A_csr);
     free_expr(exp_node);
 
     return 0;

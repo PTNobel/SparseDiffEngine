@@ -10,7 +10,7 @@ const char *test_upper_tri_jacobian_variable(void)
 {
     /* upper_tri of a 4x4 variable (16 vars total)
      * Row-major upper tri indices: [4, 8, 12, 9, 13, 14]
-     * Jacobian is 6x16 CSR: row k has a single 1.0 at col indices[k] */
+     * Jacobian is 6x16 CSR_matrix: row k has a single 1.0 at col indices[k] */
     double u[16];
     for (int k = 0; k < 16; k++)
     {
@@ -27,10 +27,9 @@ const char *test_upper_tri_jacobian_variable(void)
     int expected_p[7] = {0, 1, 2, 3, 4, 5, 6};
     int expected_i[6] = {4, 8, 12, 9, 13, 14};
 
-    mu_assert("upper_tri jac vals",
-              cmp_double_array(ut->jacobian->x, expected_x, 6));
-    mu_assert("upper_tri jac p", cmp_int_array(ut->jacobian->p, expected_p, 7));
-    mu_assert("upper_tri jac i", cmp_int_array(ut->jacobian->i, expected_i, 6));
+    mu_assert("vals fail", cmp_values(ut->jacobian, expected_x, 6));
+    mu_assert("sparsity fail",
+              cmp_sparsity(ut->jacobian, expected_p, expected_i, 6, 6));
 
     free_expr(ut);
     return 0;
@@ -57,12 +56,12 @@ const char *test_upper_tri_jacobian_of_log(void)
     ut->eval_jacobian(ut);
 
     double expected_x[6] = {0.2, 1.0 / 9.0, 1.0 / 13.0, 0.1, 1.0 / 14.0, 1.0 / 15.0};
+    int expected_p[7] = {0, 1, 2, 3, 4, 5, 6};
     int expected_i[6] = {4, 8, 12, 9, 13, 14};
 
-    mu_assert("upper_tri log jac vals",
-              cmp_double_array(ut->jacobian->x, expected_x, 6));
-    mu_assert("upper_tri log jac cols",
-              cmp_int_array(ut->jacobian->i, expected_i, 6));
+    mu_assert("vals fail", cmp_values(ut->jacobian, expected_x, 6));
+    mu_assert("sparsity fail",
+              cmp_sparsity(ut->jacobian, expected_p, expected_i, 6, 6));
 
     free_expr(ut);
     return 0;

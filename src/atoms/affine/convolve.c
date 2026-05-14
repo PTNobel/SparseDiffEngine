@@ -17,9 +17,10 @@
  */
 #include "atoms/affine.h"
 #include "subexpr.h"
-#include "utils/CSR_Matrix.h"
+#include "utils/CSR_matrix.h"
 #include "utils/linalg_sparse_matmuls.h"
 #include "utils/mini_numpy.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,13 +77,14 @@ static void jacobian_init_impl(expr *node)
     jacobian_init(child);
 
     /* Build convolution matrix of size (m+n-1) x n with m*n nonzeros */
-    cnode->T = new_csr_matrix(m + n - 1, n, m * n);
+    cnode->T = new_CSR_matrix(m + n - 1, n, m * n);
     conv_matrix_fill_sparsity(cnode->T, m, n);
     conv_matrix_fill_values(cnode->T, a);
 
     /* J = T @ J_child */
-    cnode->Jchild_CSC = csr_to_csc_alloc(child->jacobian, node->work->iwork);
-    node->jacobian = csr_csc_matmul_alloc(cnode->T, cnode->Jchild_CSC);
+    cnode->Jchild_CSC = csr_to_csc_alloc(child->jacobian->to_csr(child->jacobian), node->work->iwork);
+    node->jacobian =
+        new_sparse_matrix(csr_csc_matmul_alloc(cnode->T, cnode->Jchild_CSC));
 }
 
 static void eval_jacobian(expr *node)
@@ -93,8 +95,10 @@ static void eval_jacobian(expr *node)
     child->eval_jacobian(child);
 
     /* J = T @ J_child */
-    csr_to_csc_fill_values(child->jacobian, cnode->Jchild_CSC, node->work->iwork);
-    csr_csc_matmul_fill_values(cnode->T, cnode->Jchild_CSC, node->jacobian);
+    csr_to_csc_fill_values(child->jacobian->to_csr(child->jacobian), cnode->Jchild_CSC,
+                           node->work->iwork);
+    csr_csc_matmul_fill_values(cnode->T, cnode->Jchild_CSC,
+                               node->jacobian->to_csr(node->jacobian));
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -103,7 +107,7 @@ static void wsum_hess_init_impl(expr *node)
     convolve_expr *cnode = (convolve_expr *) node;
 
     wsum_hess_init(child);
-    node->wsum_hess = new_csr_copy_sparsity(child->wsum_hess);
+    node->wsum_hess = child->wsum_hess->copy_sparsity(child->wsum_hess);
     node->work->dwork = (double *) SP_MALLOC(cnode->n * sizeof(double));
 }
 
@@ -127,7 +131,7 @@ static void eval_wsum_hess(expr *node, const double *w)
 
     child->eval_wsum_hess(child, w_prime);
     memcpy(node->wsum_hess->x, child->wsum_hess->x,
-           child->wsum_hess->nnz * sizeof(double));
+           node->wsum_hess->nnz * sizeof(double));
 }
 
 static bool is_affine(const expr *node)
@@ -138,8 +142,8 @@ static bool is_affine(const expr *node)
 static void free_type_data(expr *node)
 {
     convolve_expr *cnode = (convolve_expr *) node;
-    free_csr_matrix(cnode->T);
-    free_csc_matrix(cnode->Jchild_CSC);
+    free_CSR_matrix(cnode->T);
+    free_CSC_matrix(cnode->Jchild_CSC);
     free_expr(cnode->param_source);
 }
 

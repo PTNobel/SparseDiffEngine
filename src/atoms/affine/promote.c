@@ -40,46 +40,23 @@ static void jacobian_init_impl(expr *node)
     expr *x = node->left;
     jacobian_init(x);
 
-    /* each output row copies the single row from child's jacobian */
-    int nnz = node->size * x->jacobian->nnz;
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, nnz);
-
-    /* fill sparsity pattern */
-    CSR_Matrix *J = node->jacobian;
-    J->nnz = 0;
-    for (int row = 0; row < node->size; row++)
-    {
-        J->p[row] = J->nnz;
-        memcpy(J->i + J->nnz, x->jacobian->i, x->jacobian->nnz * sizeof(int));
-        J->nnz += x->jacobian->nnz;
-    }
-    assert(J->nnz == nnz);
-    J->p[node->size] = J->nnz;
+    /* allocate sparsity for an (node->size, n_vars) matrix whose rows are all
+       copies of the child's single row; output type matches child's type. */
+    node->jacobian = x->jacobian->promote_alloc(x->jacobian, node->size);
 }
 
 static void eval_jacobian(expr *node)
 {
     node->left->eval_jacobian(node->left);
 
-    CSR_Matrix *child_jac = node->left->jacobian;
-    CSR_Matrix *jac = node->jacobian;
-    int child_nnz = child_jac->p[1] - child_jac->p[0];
-
-    /* Copy child's row values to each output row */
-    for (int row = 0; row < node->size; row++)
-    {
-        memcpy(jac->x + row * child_nnz, child_jac->x + child_jac->p[0],
-               child_nnz * sizeof(double));
-    }
+    /* tile the child's single row into the preallocated output. */
+    node->left->jacobian->promote_fill_values(node->left->jacobian, node->jacobian);
 }
 
 static void wsum_hess_init_impl(expr *node)
 {
     wsum_hess_init(node->left);
-
-    /* same sparsity as child since we're summing weights */
-    CSR_Matrix *child_hess = node->left->wsum_hess;
-    node->wsum_hess = new_csr_copy_sparsity(child_hess);
+    node->wsum_hess = node->left->wsum_hess->copy_sparsity(node->left->wsum_hess);
 }
 
 static void eval_wsum_hess(expr *node, const double *w)
@@ -95,8 +72,8 @@ static void eval_wsum_hess(expr *node, const double *w)
     node->left->eval_wsum_hess(node->left, &sum_w);
 
     /* copy values */
-    CSR_Matrix *child_hess = node->left->wsum_hess;
-    memcpy(node->wsum_hess->x, child_hess->x, child_hess->nnz * sizeof(double));
+    memcpy(node->wsum_hess->x, node->left->wsum_hess->x,
+           node->left->wsum_hess->nnz * sizeof(double));
 }
 
 static bool is_affine(const expr *node)

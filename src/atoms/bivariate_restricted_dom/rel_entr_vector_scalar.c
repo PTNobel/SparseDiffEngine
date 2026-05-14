@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include "atoms/bivariate_restricted_dom.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <math.h>
@@ -50,35 +51,35 @@ static void jacobian_init_vector_scalar(expr *node)
     assert(x->var_id != NOT_A_VARIABLE && y->var_id != NOT_A_VARIABLE);
     assert(x->var_id != y->var_id);
 
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, 2 * node->size);
+    CSR_matrix *jac = new_CSR_matrix(node->size, node->n_vars, 2 * node->size);
 
     if (x->var_id < y->var_id)
     {
         for (int j = 0; j < node->size; j++)
         {
-            node->jacobian->i[2 * j] = x->var_id + j;
-            node->jacobian->i[2 * j + 1] = y->var_id;
-            node->jacobian->p[j] = 2 * j;
+            jac->i[2 * j] = x->var_id + j;
+            jac->i[2 * j + 1] = y->var_id;
+            jac->p[j] = 2 * j;
         }
     }
     else
     {
         for (int j = 0; j < node->size; j++)
         {
-            node->jacobian->i[2 * j] = y->var_id;
-            node->jacobian->i[2 * j + 1] = x->var_id + j;
-            node->jacobian->p[j] = 2 * j;
+            jac->i[2 * j] = y->var_id;
+            jac->i[2 * j + 1] = x->var_id + j;
+            jac->p[j] = 2 * j;
         }
     }
 
-    node->jacobian->p[node->size] = 2 * node->size;
+    jac->p[node->size] = 2 * node->size;
+    node->jacobian = new_sparse_matrix(jac);
 }
 
 static void eval_jacobian_vector_scalar(expr *node)
 {
     expr *x = node->left;
     expr *y = node->right;
-
     if (x->var_id < y->var_id)
     {
         for (int i = 0; i < node->size; i++)
@@ -104,8 +105,8 @@ static void wsum_hess_init_vector_scalar(expr *node)
     int var_id_x = x->var_id;
     int var_id_y = y->var_id;
 
-    node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, 3 * node->size + 1);
-    CSR_Matrix *H = node->wsum_hess;
+    CSR_matrix *H =
+        new_CSR_matrix(node->n_vars, node->n_vars, 3 * node->size + 1);
 
     if (var_id_x < var_id_y)
     {
@@ -161,6 +162,7 @@ static void wsum_hess_init_vector_scalar(expr *node)
             H->p[i] = 3 * node->size + 1;
         }
     }
+    node->wsum_hess = new_sparse_matrix(H);
 }
 
 static void eval_wsum_hess_vector_scalar(expr *node, const double *w)

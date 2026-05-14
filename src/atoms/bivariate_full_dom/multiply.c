@@ -17,7 +17,11 @@
  */
 #include "atoms/bivariate_full_dom.h"
 #include "subexpr.h"
+#include "utils/CSR_matrix.h"
 #include "utils/CSR_sum.h"
+#include "utils/matrix_BTA.h"
+#include "utils/matrix_sum.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <stdio.h>
@@ -50,10 +54,10 @@ static void jacobian_init_impl(expr *node)
     jacobian_init(node->left);
     jacobian_init(node->right);
     int nnz_max = node->left->jacobian->nnz + node->right->jacobian->nnz;
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, nnz_max);
+    node->jacobian = new_sparse_matrix_alloc(node->size, node->n_vars, nnz_max);
 
     /* fill sparsity pattern */
-    sum_csr_alloc(node->left->jacobian, node->right->jacobian, node->jacobian);
+    sum_matrices_alloc(node->left->jacobian, node->right->jacobian, node->jacobian);
 }
 
 static void eval_jacobian(expr *node)
@@ -66,8 +70,8 @@ static void eval_jacobian(expr *node)
 
     /* chain rule: the jacobian of h(x) = f(g1(x), g2(x))) is Jh = J_{f, 1} J_{g1} +
      * J_{f, 2} J_{g2} */
-    sum_scaled_csr_matrices_fill_values(x->jacobian, y->jacobian, node->jacobian,
-                                        y->value, x->value);
+    sum_scaled_matrices_fill_values(x->jacobian, y->jacobian, node->jacobian,
+                                    y->value, x->value);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -80,7 +84,8 @@ static void wsum_hess_init_impl(expr *node)
         x->var_id != y->var_id)
     {
         assert(y->var_id != NOT_A_VARIABLE);
-        node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, 2 * node->size);
+        CSR_matrix *hess =
+            new_CSR_matrix(node->n_vars, node->n_vars, 2 * node->size);
 
         int i, var1_id, var2_id;
 
@@ -98,8 +103,8 @@ static void wsum_hess_init_impl(expr *node)
         /* var1 rows of Hessian */
         for (i = 0; i < node->size; i++)
         {
-            node->wsum_hess->p[var1_id + i] = i;
-            node->wsum_hess->i[i] = var2_id + i;
+            hess->p[var1_id + i] = i;
+            hess->i[i] = var2_id + i;
         }
 
         int nnz = node->size;
@@ -107,22 +112,23 @@ static void wsum_hess_init_impl(expr *node)
         /* rows between var1 and var2 */
         for (i = var1_id + node->size; i < var2_id; i++)
         {
-            node->wsum_hess->p[i] = nnz;
+            hess->p[i] = nnz;
         }
 
         /* var2 rows of Hessian */
         for (i = 0; i < node->size; i++)
         {
-            node->wsum_hess->p[var2_id + i] = nnz + i;
-            node->wsum_hess->i[nnz + i] = var1_id + i;
+            hess->p[var2_id + i] = nnz + i;
+            hess->i[nnz + i] = var1_id + i;
         }
 
         /* remaining rows */
         nnz += node->size;
         for (i = var2_id + node->size; i <= node->n_vars; i++)
         {
-            node->wsum_hess->p[i] = nnz;
+            hess->p[i] = nnz;
         }
+        node->wsum_hess = new_sparse_matrix(hess);
     }
     else
     {
@@ -145,30 +151,37 @@ static void wsum_hess_init_impl(expr *node)
             node->work->dwork = (double *) SP_MALLOC(node->size * sizeof(double));
         }
 
-        /* prepare sparsity pattern of csc conversion */
-        jacobian_csc_init(x);
-        jacobian_csc_init(y);
-        CSC_Matrix *Jg1 = x->work->jacobian_csc;
-        CSC_Matrix *Jg2 = y->work->jacobian_csc;
+        /* For sparse matrices we need the CSC cache to be valid for the
+           BTA_matrices_alloc / BTDA_matrices_fill_values calls below. */
+        if (!x->jacobian->is_permuted_dense)
+        {
+            sparse_matrix_ensure_csc_cache((sparse_matrix *) x->jacobian);
+        }
+        if (!y->jacobian->is_permuted_dense)
+        {
+            sparse_matrix_ensure_csc_cache((sparse_matrix *) y->jacobian);
+        }
 
         /* compute sparsity of C and prepare CT */
-        CSR_Matrix *C = BTA_alloc(Jg1, Jg2);
-        node->work->iwork = (int *) SP_MALLOC(C->m * sizeof(int));
-        CSR_Matrix *CT = AT_alloc(C, node->work->iwork);
+        matrix *C = BTA_matrices_alloc(x->jacobian, y->jacobian);
+        matrix *CT = C->transpose_alloc(C);
 
         /* initialize wsum_hessians of children */
         wsum_hess_init(x);
         wsum_hess_init(y);
 
         elementwise_mult_expr *mul_node = (elementwise_mult_expr *) node;
-        mul_node->CSR_work1 = C;
-        mul_node->CSR_work2 = CT;
+        mul_node->C = C;
+        mul_node->CT = CT;
 
         /* compute sparsity pattern of H = C + C^T + term2 + term3 (we also
            fill index maps telling us where to accumulate each element of each
            matrix in the sum) */
         int *maps[4];
-        node->wsum_hess = sum_4_csr_alloc(C, CT, x->wsum_hess, y->wsum_hess, maps);
+        CSR_matrix *hess = sum_4_csr_alloc(C->to_csr(C), CT->to_csr(CT),
+                                           x->wsum_hess->to_csr(x->wsum_hess),
+                                           y->wsum_hess->to_csr(y->wsum_hess), maps);
+        node->wsum_hess = new_sparse_matrix(hess);
         mul_node->idx_map_C = maps[0];
         mul_node->idx_map_CT = maps[1];
         mul_node->idx_map_Hx = maps[2];
@@ -193,44 +206,34 @@ static void eval_wsum_hess(expr *node, const double *w)
         bool is_x_affine = x->is_affine(x);
         bool is_y_affine = y->is_affine(y);
         // ----------------------------------------------------------------------
-        //            convert Jacobians of children to CSC format
-        //      (we only need to do this once if the child is affine)
-        //      TODO: what if we have parameters? Should we set jacobian_csc_filled
-        //      to false whenever parameters change value?
+        //  Refresh each operand's CSC_matrix cache as needed for the (Sparse,
+        //  Sparse) dispatch path. For PD operands, refresh_csc_values is a no-op.
+        //  The jacobian_csc_filled flag preserves the affine optimization: we only
+        //  refresh on the first eval for affine children.
         // ----------------------------------------------------------------------
         if (!x->work->jacobian_csc_filled)
         {
-            csr_to_csc_fill_values(x->jacobian, x->work->jacobian_csc,
-                                   x->work->csc_work);
-
+            x->jacobian->refresh_csc_values(x->jacobian);
             if (is_x_affine)
             {
                 x->work->jacobian_csc_filled = true;
             }
         }
-
         if (!y->work->jacobian_csc_filled)
         {
-            csr_to_csc_fill_values(y->jacobian, y->work->jacobian_csc,
-                                   y->work->csc_work);
-
+            y->jacobian->refresh_csc_values(y->jacobian);
             if (is_y_affine)
             {
                 y->work->jacobian_csc_filled = true;
             }
         }
 
-        CSC_Matrix *Jg1 = x->work->jacobian_csc;
-        CSC_Matrix *Jg2 = y->work->jacobian_csc;
-
         // ---------------------------------------------------------------
         //                    compute C and CT
         // ---------------------------------------------------------------
         elementwise_mult_expr *mul_node = (elementwise_mult_expr *) node;
-        CSR_Matrix *C = mul_node->CSR_work1;
-        CSR_Matrix *CT = mul_node->CSR_work2;
-        BTDA_fill_values(Jg1, Jg2, w, C);
-        AT_fill_values(C, CT, node->work->iwork);
+        BTDA_matrices_fill_values(x->jacobian, w, y->jacobian, mul_node->C);
+        mul_node->C->transpose_fill_values(mul_node->C, mul_node->CT);
 
         // ---------------------------------------------------------------
         //              compute term2 and term 3
@@ -257,18 +260,22 @@ static void eval_wsum_hess(expr *node, const double *w)
         //        compute H = C + C^T + term2 + term3
         // ---------------------------------------------------------------
         memset(node->wsum_hess->x, 0, node->wsum_hess->nnz * sizeof(double));
-        accumulator(C, mul_node->idx_map_C, node->wsum_hess->x);
-        accumulator(CT, mul_node->idx_map_CT, node->wsum_hess->x);
-        accumulator(x->wsum_hess, mul_node->idx_map_Hx, node->wsum_hess->x);
-        accumulator(y->wsum_hess, mul_node->idx_map_Hy, node->wsum_hess->x);
+        accumulator(mul_node->C->x, mul_node->C->nnz, mul_node->idx_map_C,
+                    node->wsum_hess->x);
+        accumulator(mul_node->CT->x, mul_node->CT->nnz, mul_node->idx_map_CT,
+                    node->wsum_hess->x);
+        accumulator(x->wsum_hess->x, x->wsum_hess->nnz, mul_node->idx_map_Hx,
+                    node->wsum_hess->x);
+        accumulator(y->wsum_hess->x, y->wsum_hess->nnz, mul_node->idx_map_Hy,
+                    node->wsum_hess->x);
     }
 }
 
 static void free_type_data(expr *node)
 {
     elementwise_mult_expr *mul_node = (elementwise_mult_expr *) node;
-    free_csr_matrix(mul_node->CSR_work1);
-    free_csr_matrix(mul_node->CSR_work2);
+    free_matrix(mul_node->C);
+    free_matrix(mul_node->CT);
     free(mul_node->idx_map_C);
     free(mul_node->idx_map_CT);
     free(mul_node->idx_map_Hx);

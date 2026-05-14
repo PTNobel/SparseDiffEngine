@@ -11,7 +11,7 @@ const char *test_jacobian_composite_exp(void)
 {
     double u_vals[6] = {0, 0, 1, 2, 3, 0};
 
-    CSR_Matrix *A = new_csr_matrix(2, 6, 6);
+    CSR_matrix *A = new_CSR_matrix(2, 6, 6);
     double Ax[6] = {3, 2, 1, 2, 1, 1};
     int Ai[6] = {2, 3, 4, 2, 3, 4};
     int Ap[3] = {0, 3, 6};
@@ -33,11 +33,10 @@ const char *test_jacobian_composite_exp(void)
     double vals[6] = {3 * e10, 2 * e10, 1 * e10, 2 * e7, 1 * e7, 1 * e7};
     int rows[3] = {0, 3, 6};
     int cols[6] = {2, 3, 4, 2, 3, 4};
-    mu_assert("vals fail", cmp_double_array(exp_node->jacobian->x, vals, 6));
-    mu_assert("rows fail", cmp_int_array(exp_node->jacobian->p, rows, 3));
-    mu_assert("cols fail", cmp_int_array(exp_node->jacobian->i, cols, 6));
+    mu_assert("vals fail", cmp_values(exp_node->jacobian, vals, 6));
+    mu_assert("sparsity fail", cmp_sparsity(exp_node->jacobian, rows, cols, 2, 6));
     free_expr(exp_node);
-    free_csr_matrix(A);
+    free_CSR_matrix(A);
     return 0;
 }
 
@@ -46,7 +45,7 @@ const char *test_jacobian_composite_exp_add(void)
 {
     double u_vals[7] = {0, 0, 1, 1, 1, 2, 2};
 
-    CSR_Matrix *A = new_csr_matrix(3, 7, 9);
+    CSR_matrix *A = new_CSR_matrix(3, 7, 9);
     double Ax[9] = {1, 1, 1, 2, 2, 2, 3, 3, 3};
     int Ai[9] = {2, 3, 4, 2, 3, 4, 2, 3, 4};
     int Ap[4] = {0, 3, 6, 9};
@@ -54,7 +53,7 @@ const char *test_jacobian_composite_exp_add(void)
     memcpy(A->i, Ai, 9 * sizeof(int));
     memcpy(A->p, Ap, 4 * sizeof(int));
 
-    CSR_Matrix *B = new_csr_matrix(3, 7, 6);
+    CSR_matrix *B = new_CSR_matrix(3, 7, 6);
     double Bx[6] = {1, 1, 2, 2, 3, 3};
     int Bi[6] = {5, 6, 5, 6, 5, 6};
     int Bp[4] = {0, 2, 4, 6};
@@ -74,7 +73,7 @@ const char *test_jacobian_composite_exp_add(void)
               check_jacobian_num(sum, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(sum);
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     return 0;
 }

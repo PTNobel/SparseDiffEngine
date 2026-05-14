@@ -16,7 +16,8 @@
  * limitations under the License.
  */
 #include "atoms/affine.h"
-#include "utils/CSR_sum.h"
+#include "utils/matrix_sum.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <stdio.h>
@@ -43,10 +44,10 @@ static void jacobian_init_impl(expr *node)
 
     /* we never have to store more than the sum of children's nnz */
     int nnz_max = node->left->jacobian->nnz + node->right->jacobian->nnz;
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, nnz_max);
+    node->jacobian = new_sparse_matrix_alloc(node->size, node->n_vars, nnz_max);
 
-    /* fill sparsity pattern  */
-    sum_csr_alloc(node->left->jacobian, node->right->jacobian, node->jacobian);
+    /* fill sparsity pattern */
+    sum_matrices_alloc(node->left->jacobian, node->right->jacobian, node->jacobian);
 }
 
 static void eval_jacobian(expr *node)
@@ -56,7 +57,8 @@ static void eval_jacobian(expr *node)
     node->right->eval_jacobian(node->right);
 
     /* sum children's jacobians */
-    sum_csr_fill_values(node->left->jacobian, node->right->jacobian, node->jacobian);
+    sum_matrices_fill_values(node->left->jacobian, node->right->jacobian,
+                             node->jacobian);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -67,10 +69,11 @@ static void wsum_hess_init_impl(expr *node)
 
     /* we never have to store more than the sum of children's nnz */
     int nnz_max = node->left->wsum_hess->nnz + node->right->wsum_hess->nnz;
-    node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, nnz_max);
+    node->wsum_hess = new_sparse_matrix_alloc(node->n_vars, node->n_vars, nnz_max);
 
     /* fill sparsity pattern of hessian */
-    sum_csr_alloc(node->left->wsum_hess, node->right->wsum_hess, node->wsum_hess);
+    sum_matrices_alloc(node->left->wsum_hess, node->right->wsum_hess,
+                       node->wsum_hess);
 }
 
 static void eval_wsum_hess(expr *node, const double *w)
@@ -80,8 +83,8 @@ static void eval_wsum_hess(expr *node, const double *w)
     node->right->eval_wsum_hess(node->right, w);
 
     /* sum children's wsum_hess */
-    sum_csr_fill_values(node->left->wsum_hess, node->right->wsum_hess,
-                        node->wsum_hess);
+    sum_matrices_fill_values(node->left->wsum_hess, node->right->wsum_hess,
+                             node->wsum_hess);
 }
 
 static bool is_affine(const expr *node)

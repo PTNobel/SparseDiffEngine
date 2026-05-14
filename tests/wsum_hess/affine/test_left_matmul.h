@@ -53,8 +53,8 @@ const char *test_wsum_hess_left_matmul(void)
 
     expr *x = new_variable(3, 1, 0, 3);
 
-    /* Create sparse matrix A in CSR format */
-    CSR_Matrix *A = new_csr_matrix(4, 3, 7);
+    /* Create sparse matrix A in CSR_matrix format */
+    CSR_matrix *A = new_CSR_matrix(4, 3, 7);
     int A_p[5] = {0, 2, 4, 6, 7};
     int A_i[7] = {0, 2, 0, 2, 0, 2, 0};
     double A_x[7] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
@@ -80,12 +80,11 @@ const char *test_wsum_hess_left_matmul(void)
     int expected_i[3] = {0, 1, 2};
     int expected_p[4] = {0, 1, 2, 3}; /* each row has 1 diagonal entry */
 
-    mu_assert("vals incorrect",
-              cmp_double_array(A_log_x->wsum_hess->x, expected_x, 3));
-    mu_assert("cols incorrect", cmp_int_array(A_log_x->wsum_hess->i, expected_i, 3));
-    mu_assert("rows incorrect", cmp_int_array(A_log_x->wsum_hess->p, expected_p, 4));
+    mu_assert("vals fail", cmp_values(A_log_x->wsum_hess, expected_x, 3));
+    mu_assert("sparsity fail",
+              cmp_sparsity(A_log_x->wsum_hess, expected_p, expected_i, 3, 3));
 
-    free_csr_matrix(A);
+    free_CSR_matrix(A);
     free_expr(A_log_x);
     return 0;
 }
@@ -99,7 +98,7 @@ const char *test_wsum_hess_left_matmul_exp_composite(void)
     expr *x = new_variable(3, 1, 0, 3);
 
     /* Create B matrix (3x3 all ones) */
-    CSR_Matrix *B = new_csr_matrix(3, 3, 9);
+    CSR_matrix *B = new_CSR_matrix(3, 3, 9);
     int B_p[4] = {0, 3, 6, 9};
     int B_i[9] = {0, 1, 2, 0, 1, 2, 0, 1, 2};
     double B_x[9] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
@@ -108,7 +107,7 @@ const char *test_wsum_hess_left_matmul_exp_composite(void)
     memcpy(B->x, B_x, 9 * sizeof(double));
 
     /* Create A matrix */
-    CSR_Matrix *A = new_csr_matrix(4, 3, 7);
+    CSR_matrix *A = new_CSR_matrix(4, 3, 7);
     int A_p[5] = {0, 2, 4, 6, 7};
     int A_i[7] = {0, 2, 0, 2, 0, 2, 0};
     double A_x[7] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
@@ -123,8 +122,8 @@ const char *test_wsum_hess_left_matmul_exp_composite(void)
     mu_assert("check_wsum_hess failed",
               check_wsum_hess(A_exp_Bx, x_vals, w, NUMERICAL_DIFF_DEFAULT_H));
 
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     free_expr(A_exp_Bx);
     return 0;
 }
@@ -160,8 +159,8 @@ const char *test_wsum_hess_left_matmul_matrix(void)
 
     expr *x = new_variable(3, 2, 0, 6);
 
-    /* Create sparse matrix A in CSR format */
-    CSR_Matrix *A = new_csr_matrix(4, 3, 7);
+    /* Create sparse matrix A in CSR_matrix format */
+    CSR_matrix *A = new_CSR_matrix(4, 3, 7);
     int A_p[5] = {0, 2, 4, 6, 7};
     int A_i[7] = {0, 2, 0, 2, 0, 2, 0};
     double A_x[7] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
@@ -189,12 +188,34 @@ const char *test_wsum_hess_left_matmul_matrix(void)
     int expected_i[6] = {0, 1, 2, 3, 4, 5};
     int expected_p[7] = {0, 1, 2, 3, 4, 5, 6}; /* each row has 1 diagonal entry */
 
-    mu_assert("vals incorrect",
-              cmp_double_array(A_log_x->wsum_hess->x, expected_x, 6));
-    mu_assert("cols incorrect", cmp_int_array(A_log_x->wsum_hess->i, expected_i, 6));
-    mu_assert("rows incorrect", cmp_int_array(A_log_x->wsum_hess->p, expected_p, 7));
+    mu_assert("vals fail", cmp_values(A_log_x->wsum_hess, expected_x, 6));
+    mu_assert("sparsity fail",
+              cmp_sparsity(A_log_x->wsum_hess, expected_p, expected_i, 6, 6));
 
-    free_csr_matrix(A);
+    free_CSR_matrix(A);
     free_expr(A_log_x);
+    return 0;
+}
+
+/* Regression test for the Phase 3 transpose_fill_values omission in
+   new_left_matmul_dense. Mirrors the Python failure
+       cp.sum(A @ cp.exp(X))   with X a (2,2) Variable and A a 2x2 numpy array.
+   eval_wsum_hess reads lnode->AT->X via AT->block_left_mult_vec; before the
+   fix, AT->X was uninitialized memory (transpose_alloc allocates without
+   filling) and the analytic Hessian disagreed with finite differences. */
+const char *test_wsum_hess_left_matmul_dense_matrix_exp(void)
+{
+    double x_vals[4] = {0.5, -0.3, 0.7, -0.2};
+    double w[4] = {1.0, 1.0, 1.0, 1.0}; /* cp.sum: unit weight everywhere */
+    double A_data[4] = {1.0, 2.0, 3.0, 4.0};
+
+    expr *X = new_variable(2, 2, 0, 4);
+    expr *exp_X = new_exp(X);
+    expr *A_exp_X = new_left_matmul_dense(NULL, exp_X, 2, 2, A_data);
+
+    mu_assert("check_wsum_hess failed",
+              check_wsum_hess(A_exp_X, x_vals, w, NUMERICAL_DIFF_DEFAULT_H));
+
+    free_expr(A_exp_X);
     return 0;
 }

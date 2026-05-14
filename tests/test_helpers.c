@@ -4,7 +4,8 @@
 #include <string.h>
 
 #include "expr.h"
-#include "utils/CSR_Matrix.h"
+#include "utils/CSR_matrix.h"
+#include "utils/matrix.h"
 
 #define EPSILON 1e-7
 
@@ -44,6 +45,32 @@ int cmp_int_array(const int *actual, const int *expected, int size)
     return 1;
 }
 
+int cmp_sparsity(matrix *M, const int *exp_p, const int *exp_i, int m, int nnz)
+{
+    if (M->m != m)
+    {
+        printf("  FAILED: M->m = %d, expected %d\n", M->m, m);
+        return 0;
+    }
+    if (M->nnz != nnz)
+    {
+        printf("  FAILED: M->nnz = %d, expected %d\n", M->nnz, nnz);
+        return 0;
+    }
+    CSR_matrix *csr = M->to_csr(M);
+    return cmp_int_array(csr->p, exp_p, m + 1) && cmp_int_array(csr->i, exp_i, nnz);
+}
+
+int cmp_values(const matrix *M, const double *exp_x, int nnz)
+{
+    if (M->nnz != nnz)
+    {
+        printf("  FAILED: M->nnz = %d, expected %d\n", M->nnz, nnz);
+        return 0;
+    }
+    return cmp_double_array(M->x, exp_x, nnz);
+}
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -56,7 +83,7 @@ static double randn(void)
     return sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
 }
 
-CSR_Matrix *new_csr_random(int m, int n, double density)
+CSR_matrix *new_csr_random(int m, int n, double density)
 {
     /* Single pass: over-allocate, fill, then copy to exact size */
     int cap = (int) ((double) m * (double) n * density * 1.5) + m;
@@ -87,7 +114,7 @@ CSR_Matrix *new_csr_random(int m, int n, double density)
     }
     tmp_p[m] = nnz;
 
-    CSR_Matrix *A = new_csr_matrix(m, n, nnz);
+    CSR_matrix *A = new_CSR_matrix(m, n, nnz);
     memcpy(A->p, tmp_p, ((size_t) m + 1) * sizeof(int));
     memcpy(A->i, tmp_i, (size_t) nnz * sizeof(int));
     memcpy(A->x, tmp_x, (size_t) nnz * sizeof(double));

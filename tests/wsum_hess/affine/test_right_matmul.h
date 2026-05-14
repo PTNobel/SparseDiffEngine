@@ -23,8 +23,8 @@ const char *test_wsum_hess_right_matmul(void)
 
     expr *x = new_variable(2, 2, 0, 4);
 
-    /* Create sparse matrix A in CSR format (2x3) */
-    CSR_Matrix *A = new_csr_matrix(2, 3, 4);
+    /* Create sparse matrix A in CSR_matrix format (2x3) */
+    CSR_matrix *A = new_CSR_matrix(2, 3, 4);
     int A_p[3] = {0, 2, 4};
     int A_i[4] = {0, 2, 0, 2};
     double A_x[4] = {1.0, 2.0, 3.0, 4.0};
@@ -50,12 +50,11 @@ const char *test_wsum_hess_right_matmul(void)
     int expected_i[4] = {0, 1, 2, 3};
     int expected_p[5] = {0, 1, 2, 3, 4}; /* each row has 1 diagonal entry */
 
-    mu_assert("vals incorrect",
-              cmp_double_array(log_x_A->wsum_hess->x, expected_x, 4));
-    mu_assert("cols incorrect", cmp_int_array(log_x_A->wsum_hess->i, expected_i, 4));
-    mu_assert("rows incorrect", cmp_int_array(log_x_A->wsum_hess->p, expected_p, 5));
+    mu_assert("vals fail", cmp_values(log_x_A->wsum_hess, expected_x, 4));
+    mu_assert("sparsity fail",
+              cmp_sparsity(log_x_A->wsum_hess, expected_p, expected_i, 4, 4));
 
-    free_csr_matrix(A);
+    free_CSR_matrix(A);
     free_expr(log_x_A);
     return 0;
 }
@@ -73,8 +72,8 @@ const char *test_wsum_hess_right_matmul_vector(void)
 
     expr *x = new_variable(1, 3, 0, 3);
 
-    /* Create sparse matrix A in CSR format (3x2) */
-    CSR_Matrix *A = new_csr_matrix(3, 2, 4);
+    /* Create sparse matrix A in CSR_matrix format (3x2) */
+    CSR_matrix *A = new_CSR_matrix(3, 2, 4);
     int A_p[4] = {0, 1, 3, 4};
     int A_i[4] = {0, 0, 1, 1};
     double A_x[4] = {1.0, 2.0, 3.0, 4.0};
@@ -99,12 +98,11 @@ const char *test_wsum_hess_right_matmul_vector(void)
     int expected_i[3] = {0, 1, 2};
     int expected_p[4] = {0, 1, 2, 3}; /* each row has 1 diagonal entry */
 
-    mu_assert("vals incorrect",
-              cmp_double_array(log_x_A->wsum_hess->x, expected_x, 3));
-    mu_assert("cols incorrect", cmp_int_array(log_x_A->wsum_hess->i, expected_i, 3));
-    mu_assert("rows incorrect", cmp_int_array(log_x_A->wsum_hess->p, expected_p, 4));
+    mu_assert("vals fail", cmp_values(log_x_A->wsum_hess, expected_x, 3));
+    mu_assert("sparsity fail",
+              cmp_sparsity(log_x_A->wsum_hess, expected_p, expected_i, 3, 3));
 
-    free_csr_matrix(A);
+    free_CSR_matrix(A);
     free_expr(log_x_A);
     return 0;
 }

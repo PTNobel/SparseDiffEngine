@@ -17,9 +17,10 @@
  */
 #include "atoms/non_elementwise_full_dom.h"
 #include "subexpr.h"
-#include "utils/CSC_Matrix.h"
-#include "utils/CSR_sum.h"
+#include "utils/CSC_matrix.h"
+#include "utils/matrix_sum.h"
 #include "utils/cblas_wrapper.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <math.h>
@@ -35,7 +36,7 @@ static void forward(expr *node, const double *u)
     x->forward(x, u);
 
     /* local forward pass  */
-    CSR_Matrix *Q = ((quad_form_expr *) node)->Q;
+    CSR_matrix *Q = ((quad_form_expr *) node)->Q;
     Ax_csr(Q, x->value, node->work->dwork, 0);
     node->value[0] = 0.0;
 
@@ -51,27 +52,28 @@ static void jacobian_init_impl(expr *node)
 
     if (x->var_id != NOT_A_VARIABLE)
     {
-        node->jacobian = new_csr_matrix(1, node->n_vars, x->size);
-        node->jacobian->p[0] = 0;
-        node->jacobian->p[1] = x->size;
+        CSR_matrix *jac = new_CSR_matrix(1, node->n_vars, x->size);
+        jac->p[0] = 0;
+        jac->p[1] = x->size;
 
         for (int j = 0; j < x->size; j++)
         {
-            node->jacobian->i[j] = x->var_id + j;
+            jac->i[j] = x->var_id + j;
         }
+        node->jacobian = new_sparse_matrix(jac);
     }
     else
     {
         /* chain rule: J = 2 * (Q @ f(x))^T * J_f */
         jacobian_init(x);
         jacobian_csc_init(x);
-        CSC_Matrix *J_csc = x->work->jacobian_csc;
+        CSC_matrix *J_csc = x->work->jacobian_csc;
 
         /* allocate the right number of nnz */
         int nnz = count_nonzero_cols_csc(J_csc);
-        node->jacobian = new_csr_matrix(1, node->n_vars, nnz);
-        node->jacobian->p[0] = 0;
-        node->jacobian->p[1] = nnz;
+        CSR_matrix *jac = new_CSR_matrix(1, node->n_vars, nnz);
+        jac->p[0] = 0;
+        jac->p[1] = nnz;
 
         /* fill sparsity pattern */
         int idx = 0;
@@ -79,22 +81,24 @@ static void jacobian_init_impl(expr *node)
         {
             if (J_csc->p[j + 1] > J_csc->p[j])
             {
-                node->jacobian->i[idx++] = j;
+                jac->i[idx++] = j;
             }
         }
+        node->jacobian = new_sparse_matrix(jac);
     }
 }
 
 static void eval_jacobian(expr *node)
 {
     expr *x = node->left;
-    CSR_Matrix *Q = ((quad_form_expr *) node)->Q;
+    CSR_matrix *Q = ((quad_form_expr *) node)->Q;
+    CSR_matrix *jac = node->jacobian->to_csr(node->jacobian);
 
     if (x->var_id != NOT_A_VARIABLE)
     {
         /* jacobian = 2 * (Q @ x)^T */
-        Ax_csr(Q, x->value, node->jacobian->x, 0);
-        cblas_dscal(x->size, 2.0, node->jacobian->x, 1);
+        Ax_csr(Q, x->value, jac->x, 0);
+        cblas_dscal(x->size, 2.0, jac->x, 1);
     }
     else
     {
@@ -103,7 +107,7 @@ static void eval_jacobian(expr *node)
 
         if (!x->work->jacobian_csc_filled)
         {
-            csr_to_csc_fill_values(x->jacobian, x->work->jacobian_csc,
+            csr_to_csc_fill_values(x->jacobian->to_csr(x->jacobian), x->work->jacobian_csc,
                                    x->work->csc_work);
 
             if (x->is_affine(x))
@@ -114,20 +118,20 @@ static void eval_jacobian(expr *node)
 
         /* The jacobian has same values as the gradient, which is
            J_f^T (Q @ f(x)). Here, dwork stores Q @ f(x) from forward */
-        yTA_fill_values(x->work->jacobian_csc, node->work->dwork, node->jacobian);
+        yTA_fill_values(x->work->jacobian_csc, node->work->dwork, jac);
 
-        cblas_dscal(node->jacobian->nnz, 2.0, node->jacobian->x, 1);
+        cblas_dscal(jac->nnz, 2.0, jac->x, 1);
     }
 }
 
 static void wsum_hess_init_impl(expr *node)
 {
-    CSR_Matrix *Q = ((quad_form_expr *) node)->Q;
+    CSR_matrix *Q = ((quad_form_expr *) node)->Q;
     expr *x = node->left;
 
     if (x->var_id != NOT_A_VARIABLE)
     {
-        CSR_Matrix *H = new_csr_matrix(node->n_vars, node->n_vars, Q->nnz);
+        CSR_matrix *H = new_CSR_matrix(node->n_vars, node->n_vars, Q->nnz);
 
         /* set global row pointers */
         memcpy(H->p + x->var_id, Q->p, (x->size + 1) * sizeof(int));
@@ -142,7 +146,7 @@ static void wsum_hess_init_impl(expr *node)
             H->i[i] = Q->i[i] + x->var_id;
         }
 
-        node->wsum_hess = H;
+        node->wsum_hess = new_sparse_matrix(H);
     }
     else
     {
@@ -157,28 +161,30 @@ static void wsum_hess_init_impl(expr *node)
 
         /* jacobian_csc_init(x) already called in jacobian_init */
         quad_form_expr *qnode = (quad_form_expr *) node;
-        CSC_Matrix *Jf = x->work->jacobian_csc;
+        CSC_matrix *Jf = x->work->jacobian_csc;
 
         /* term1 = Jf^T W Jf = Jf^T B*/
-        CSC_Matrix *B = symBA_alloc(Q, Jf);
+        CSC_matrix *B = symBA_alloc(Q, Jf);
         qnode->QJf = B;
-        node->work->hess_term1 = BTA_alloc(Jf, B);
+        node->work->hess_term1 = new_sparse_matrix(BTA_alloc(Jf, B));
 
         /* term2 = sum_i (Qf(x))_i nabla^2 f_i */
         wsum_hess_init(x);
-        node->work->hess_term2 = new_csr_copy_sparsity(x->wsum_hess);
+        node->work->hess_term2 = x->wsum_hess->copy_sparsity(x->wsum_hess);
 
         /* hess = term1 + term2 */
-        int max_nnz = node->work->hess_term1->nnz + node->work->hess_term2->nnz;
-        node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, max_nnz);
-        sum_csr_alloc(node->work->hess_term1, node->work->hess_term2,
-                      node->wsum_hess);
+        int max_nnz =
+            node->work->hess_term1->nnz + node->work->hess_term2->nnz;
+        node->wsum_hess =
+            new_sparse_matrix_alloc(node->n_vars, node->n_vars, max_nnz);
+        sum_matrices_alloc(node->work->hess_term1, node->work->hess_term2,
+                           node->wsum_hess);
     }
 }
 
 static void eval_wsum_hess(expr *node, const double *w)
 {
-    CSR_Matrix *Q = ((quad_form_expr *) node)->Q;
+    CSR_matrix *Q = ((quad_form_expr *) node)->Q;
     expr *x = node->left;
     double two_w = 2.0 * w[0];
 
@@ -191,11 +197,11 @@ static void eval_wsum_hess(expr *node, const double *w)
     }
     else
     {
-        /* fill the CSC representation of the Jacobian of the child */
-        CSC_Matrix *Jf = x->work->jacobian_csc;
+        /* fill the CSC_matrix representation of the Jacobian of the child */
+        CSC_matrix *Jf = x->work->jacobian_csc;
         if (!x->work->jacobian_csc_filled)
         {
-            csr_to_csc_fill_values(x->jacobian, Jf, x->work->csc_work);
+            csr_to_csc_fill_values(x->jacobian->to_csr(x->jacobian), Jf, x->work->csc_work);
 
             if (x->is_affine(x))
             {
@@ -203,9 +209,8 @@ static void eval_wsum_hess(expr *node, const double *w)
             }
         }
 
-        CSC_Matrix *QJf = ((quad_form_expr *) node)->QJf;
-        CSR_Matrix *term1 = node->work->hess_term1;
-        CSR_Matrix *term2 = node->work->hess_term2;
+        CSC_matrix *QJf = ((quad_form_expr *) node)->QJf;
+        CSR_matrix *term1 = node->work->hess_term1->to_csr(node->work->hess_term1);
 
         /* term1 = J_f^T Q J_f = J_f^T B  */
         BA_fill_values(Q, Jf, QJf);
@@ -213,25 +218,27 @@ static void eval_wsum_hess(expr *node, const double *w)
 
         /* term2 */
         x->eval_wsum_hess(x, node->work->dwork);
-        memcpy(term2->x, x->wsum_hess->x, x->wsum_hess->nnz * sizeof(double));
+        memcpy(node->work->hess_term2->x, x->wsum_hess->x,
+               x->wsum_hess->nnz * sizeof(double));
 
         /* scale both terms by 2w */
-        cblas_dscal(term1->nnz, two_w, term1->x, 1);
-        cblas_dscal(term2->nnz, two_w, term2->x, 1);
+        cblas_dscal(node->work->hess_term1->nnz, two_w, node->work->hess_term1->x, 1);
+        cblas_dscal(node->work->hess_term2->nnz, two_w, node->work->hess_term2->x, 1);
 
         /* sum the two terms */
-        sum_csr_fill_values(term1, term2, node->wsum_hess);
+        sum_matrices_fill_values(node->work->hess_term1, node->work->hess_term2,
+                                 node->wsum_hess);
     }
 }
 
 static void free_type_data(expr *node)
 {
     quad_form_expr *qnode = (quad_form_expr *) node;
-    free_csr_matrix(qnode->Q);
+    free_CSR_matrix(qnode->Q);
     qnode->Q = NULL;
     if (qnode->QJf != NULL)
     {
-        free_csc_matrix(qnode->QJf);
+        free_CSC_matrix(qnode->QJf);
         qnode->QJf = NULL;
     }
 }
@@ -243,7 +250,7 @@ static bool is_affine(const expr *node)
     return false;
 }
 
-expr *new_quad_form(expr *left, CSR_Matrix *Q)
+expr *new_quad_form(expr *left, CSR_matrix *Q)
 {
     assert(left->d1 == 1 || left->d2 == 1); /* left must be a vector */
     quad_form_expr *qnode = (quad_form_expr *) SP_CALLOC(1, sizeof(quad_form_expr));
@@ -255,8 +262,8 @@ expr *new_quad_form(expr *left, CSR_Matrix *Q)
     expr_retain(left);
 
     /* Set type-specific field */
-    qnode->Q = new_csr_matrix(Q->m, Q->n, Q->nnz);
-    copy_csr_matrix(Q, qnode->Q);
+    qnode->Q = new_CSR_matrix(Q->m, Q->n, Q->nnz);
+    copy_CSR_matrix(Q, qnode->Q);
 
     /* dwork stores the result of Q @ f(x) in the forward pass */
     node->work->dwork = (double *) SP_MALLOC(left->size * sizeof(double));

@@ -17,10 +17,14 @@
  */
 #include "atoms/affine.h"
 #include "subexpr.h"
-#include "utils/dense_matrix.h"
+#include "utils/matrix_BTA.h"
+#include "utils/mini_numpy.h"
+#include "utils/permuted_dense.h"
+#include "utils/sparse_matrix.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* This file implement the atom 'left_matmul' corresponding to the operation y =
    A @ f(x), where A is a given matrix and f(x) is an arbitrary expression.
@@ -78,7 +82,7 @@ static void forward(expr *node, const double *u)
     node->left->forward(node->left, u);
 
     /* y = A_kron @ vec(f(x)) */
-    Matrix *A = lnode->A;
+    matrix *A = lnode->A;
     int n_blocks = lnode->n_blocks;
     A->block_left_mult_vec(A, x->value, node->value, n_blocks);
 }
@@ -93,8 +97,8 @@ static void free_type_data(expr *node)
     left_matmul_expr *lnode = (left_matmul_expr *) node;
     free_matrix(lnode->A);
     free_matrix(lnode->AT);
-    free_csc_matrix(lnode->Jchild_CSC);
-    free_csc_matrix(lnode->J_CSC);
+    free_CSC_matrix(lnode->Jchild_CSC);
+    free_CSC_matrix(lnode->J_CSC);
     free(lnode->csc_to_csr_work);
     if (lnode->param_source != NULL)
     {
@@ -108,36 +112,67 @@ static void free_type_data(expr *node)
     lnode->param_source = NULL;
 }
 
-static void jacobian_init_impl(expr *node)
+/* TODO: use better polymorphism here if you add another matrix type*/
+
+/* jacobian_init when node->jacobian is permuted_dense */
+static void jacobian_init_pd(expr *node)
 {
+    /* initialize jacobian of child */
     expr *x = node->left;
     left_matmul_expr *lnode = (left_matmul_expr *) node;
-
-    /* initialize child's jacobian and precompute sparsity of its CSC */
     jacobian_init(x);
-    lnode->Jchild_CSC = csr_to_csc_alloc(x->jacobian, node->work->iwork);
 
-    /* precompute sparsity of this node's jacobian in CSC and CSR */
-    lnode->J_CSC = lnode->A->block_left_mult_sparsity(lnode->A, lnode->Jchild_CSC,
-                                                      lnode->n_blocks);
-    node->jacobian = csc_to_csr_alloc(lnode->J_CSC, lnode->csc_to_csr_work);
+    /* initialize this node's jacobian */
+    node->jacobian = BA_pd_matrices_alloc((permuted_dense *) lnode->A, x->jacobian);
 }
 
-static void eval_jacobian(expr *node)
+/* eval_jacobian when node->jacobian is permuted_dense */
+static void eval_jacobian_pd(expr *node)
 {
+    /* evaluate jacobian of child */
     left_matmul_expr *lnode = (left_matmul_expr *) node;
     expr *x = node->left;
-
-    CSC_Matrix *Jchild_CSC = lnode->Jchild_CSC;
-    CSC_Matrix *J_CSC = lnode->J_CSC;
-
-    /* evaluate child's jacobian and convert to CSC */
     x->eval_jacobian(x);
-    csr_to_csc_fill_values(x->jacobian, Jchild_CSC, node->work->iwork);
 
-    /* compute this node's jacobian: */
+    /* must refresh CSC cache if x->jacobian is sparse_matrix */
+    x->jacobian->refresh_csc_values(x->jacobian);
+    BA_pd_matrices_fill_values((permuted_dense *) lnode->A, x->jacobian,
+                               (permuted_dense *) node->jacobian);
+}
+
+/* jacobian_init when node->jacobian is sparse */
+static void jacobian_init_sparse(expr *node)
+{
+    /* initialize jacobian of child */
+    expr *x = node->left;
+    left_matmul_expr *lnode = (left_matmul_expr *) node;
+    jacobian_init(x);
+
+    /* initialize this node's jacobian */
+    lnode->Jchild_CSC =
+        csr_to_csc_alloc(x->jacobian->to_csr(x->jacobian), node->work->iwork);
+    lnode->J_CSC = lnode->A->block_left_mult_sparsity(lnode->A, lnode->Jchild_CSC,
+                                                      lnode->n_blocks);
+    node->jacobian =
+        new_sparse_matrix(csc_to_csr_alloc(lnode->J_CSC, lnode->csc_to_csr_work));
+}
+
+/* eval_jacobian when node->jacobian is sparse */
+static void eval_jacobian_sparse(expr *node)
+{
+    /* evaluate jacobian of child */
+    left_matmul_expr *lnode = (left_matmul_expr *) node;
+    expr *x = node->left;
+    x->eval_jacobian(x);
+
+    /* evaluate this node's jacobian */
+    CSC_matrix *Jchild_CSC = lnode->Jchild_CSC;
+    CSC_matrix *J_CSC = lnode->J_CSC;
+    csr_to_csc_fill_values(x->jacobian->to_csr(x->jacobian), Jchild_CSC,
+                           node->work->iwork);
     lnode->A->block_left_mult_values(lnode->A, Jchild_CSC, J_CSC);
-    csc_to_csr_fill_values(J_CSC, node->jacobian, lnode->csc_to_csr_work);
+    csc_to_csr_fill_values(J_CSC, node->jacobian->to_csr(node->jacobian),
+                           lnode->csc_to_csr_work);
 }
 
 static void wsum_hess_init_impl(expr *node)
@@ -147,7 +182,7 @@ static void wsum_hess_init_impl(expr *node)
     wsum_hess_init(x);
 
     /* allocate this node's hessian with the same sparsity as child's */
-    node->wsum_hess = new_csr_copy_sparsity(x->wsum_hess);
+    node->wsum_hess = x->wsum_hess->copy_sparsity(x->wsum_hess);
 
     /* work for computing A^T w*/
     int n_blocks = ((left_matmul_expr *) node)->n_blocks;
@@ -160,7 +195,7 @@ static void eval_wsum_hess(expr *node, const double *w)
     left_matmul_expr *lnode = (left_matmul_expr *) node;
 
     /* compute A^T w*/
-    Matrix *AT = lnode->AT;
+    matrix *AT = lnode->AT;
     int n_blocks = lnode->n_blocks;
     AT->block_left_mult_vec(AT, w, node->work->dwork, n_blocks);
 
@@ -171,19 +206,17 @@ static void eval_wsum_hess(expr *node, const double *w)
 
 static void refresh_dense_left(left_matmul_expr *lnode)
 {
-    Dense_Matrix *dm_A = (Dense_Matrix *) lnode->A;
-    Dense_Matrix *dm_AT = (Dense_Matrix *) lnode->AT;
-    int m = dm_A->base.m;
-    int n = dm_A->base.n;
+    int m = lnode->A->m;
+    int n = lnode->A->n;
 
     /* The parameter represents the A in left_matmul_dense(A, x) in column-major.
        In this diffengine, we store A in row-major order. Hence, param->vals
        actually corresponds to the transpose of A, and we transpose AT to get A. */
-    memcpy(dm_AT->x, lnode->param_source->value, m * n * sizeof(double));
-    A_transpose(dm_A->x, dm_AT->x, n, m);
+    memcpy(lnode->AT->x, lnode->param_source->value, m * n * sizeof(double));
+    A_transpose(lnode->A->x, lnode->AT->x, n, m);
 }
 
-expr *new_left_matmul(expr *param_node, expr *u, const CSR_Matrix *A)
+expr *new_left_matmul(expr *param_node, expr *u, const CSR_matrix *A)
 {
     /* We expect u->d1 == A->n. However, numpy's broadcasting rules allow users
        to do A @ u where u is (n, ) which in C is actually (1, n). In that case
@@ -212,23 +245,25 @@ expr *new_left_matmul(expr *param_node, expr *u, const CSR_Matrix *A)
     left_matmul_expr *lnode =
         (left_matmul_expr *) SP_CALLOC(1, sizeof(left_matmul_expr));
     expr *node = &lnode->base;
-    init_expr(node, d1, d2, u->n_vars, forward, jacobian_init_impl, eval_jacobian,
-              is_affine, wsum_hess_init_impl, eval_wsum_hess, free_type_data);
+    /* Sparse A — always the general CSC-mirror path. */
+    init_expr(node, d1, d2, u->n_vars, forward, jacobian_init_sparse,
+              eval_jacobian_sparse, is_affine, wsum_hess_init_impl, eval_wsum_hess,
+              free_type_data);
     node->left = u;
     expr_retain(u);
 
     /* allocate workspace. iwork is used for converting J_child csr to csc
-       (requiring size node->n_vars) and for transposing A (requiring size A->n).
-       csc_to_csr_work is used for converting J_CSC to CSR (requiring
+       (requiring size node->n_vars).
+       csc_to_csr_work is used for converting J_CSC to CSR_matrix (requiring
        node->size) */
-    node->work->iwork = (int *) SP_MALLOC(MAX(A->n, node->n_vars) * sizeof(int));
+    node->work->iwork = (int *) SP_MALLOC(node->n_vars * sizeof(int));
     lnode->csc_to_csr_work = (int *) SP_MALLOC(node->size * sizeof(int));
     lnode->n_blocks = n_blocks;
 
-    /* store A and AT */
-    lnode->A = new_sparse_matrix(A);
-    lnode->AT =
-        sparse_matrix_trans((const Sparse_Matrix *) lnode->A, node->work->iwork);
+    /* store A and AT. new_sparse_matrix takes ownership, so clone first. */
+    lnode->A = new_sparse_matrix(new_csr(A));
+    lnode->AT = lnode->A->transpose_alloc(lnode->A);
+    lnode->A->transpose_fill_values(lnode->A, lnode->AT);
 
     /* parameter support */
     lnode->param_source = param_node;
@@ -245,6 +280,9 @@ expr *new_left_matmul(expr *param_node, expr *u, const CSR_Matrix *A)
 expr *new_left_matmul_dense(expr *param_node, expr *u, int m, int n,
                             const double *data)
 {
+    /* TODO: do a helper function for this dimension check (so we can use it in both
+     * dense and sparse constructors). We could include even more code in that
+     * functon, all the day down to the parameter support I think*/
     int d1, d2, n_blocks;
     if (u->d1 == n)
     {
@@ -267,8 +305,18 @@ expr *new_left_matmul_dense(expr *param_node, expr *u, int m, int n,
     left_matmul_expr *lnode =
         (left_matmul_expr *) SP_CALLOC(1, sizeof(left_matmul_expr));
     expr *node = &lnode->base;
-    init_expr(node, d1, d2, u->n_vars, forward, jacobian_init_impl, eval_jacobian,
-              is_affine, wsum_hess_init_impl, eval_wsum_hess, free_type_data);
+    /* PD A: the BA_pd_matrices dispatcher applies whenever there is a single
+       Kronecker block, whether A is constant or parameterized. With a
+       parameter, A's structure is fixed at construction (full-block PD with
+       trivial permutations); refresh_dense_left updates A->X before each
+       forward, and eval_jacobian_pd reads those refreshed values via
+       BA_pd_matrices_fill_values. With n_blocks > 1 the Kronecker structure
+       forces the general CSC-mirror path. */
+    bool pd_path = (n_blocks == 1);
+    init_expr(node, d1, d2, u->n_vars, forward,
+              pd_path ? jacobian_init_pd : jacobian_init_sparse,
+              pd_path ? eval_jacobian_pd : eval_jacobian_sparse, is_affine,
+              wsum_hess_init_impl, eval_wsum_hess, free_type_data);
     node->left = u;
     expr_retain(u);
 
@@ -290,8 +338,8 @@ expr *new_left_matmul_dense(expr *param_node, expr *u, int m, int n,
         lnode->refresh_param_values = refresh_dense_left;
 
         /* A and AT buffers are filled by refresh_dense_left from the parameter. */
-        lnode->A = new_dense_matrix(m, n, NULL);
-        lnode->AT = new_dense_matrix(n, m, NULL);
+        lnode->A = new_permuted_dense_full(m, n, NULL);
+        lnode->AT = new_permuted_dense_full(n, m, NULL);
         node->needs_parameter_refresh = true;
     }
     /* constant matrix case */
@@ -303,8 +351,9 @@ expr *new_left_matmul_dense(expr *param_node, expr *u, int m, int n,
             exit(1);
         }
 
-        lnode->A = new_dense_matrix(m, n, data);
-        lnode->AT = dense_matrix_trans((const Dense_Matrix *) lnode->A);
+        lnode->A = new_permuted_dense_full(m, n, data);
+        lnode->AT = lnode->A->transpose_alloc(lnode->A);
+        lnode->A->transpose_fill_values(lnode->A, lnode->AT);
     }
 
     return node;

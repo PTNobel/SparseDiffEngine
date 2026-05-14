@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 #include "expr.h"
-#include "utils/CSC_Matrix.h"
+#include "utils/CSC_matrix.h"
 #include "utils/int_double_pair.h"
 #include "utils/tracked_alloc.h"
 #include <stdlib.h>
@@ -52,7 +52,7 @@ void jacobian_csc_init(expr *node)
     }
     node->work->csc_work = (int *) SP_MALLOC(node->n_vars * sizeof(int));
     node->work->jacobian_csc =
-        csr_to_csc_alloc(node->jacobian, node->work->csc_work);
+        csr_to_csc_alloc(node->jacobian->to_csr(node->jacobian), node->work->csc_work);
 }
 
 void free_expr(expr *node)
@@ -76,19 +76,19 @@ void free_expr(expr *node)
 
     /* free value array and derivative matrices */
     free(node->value);
-    free_csr_matrix(node->jacobian);
-    free_csr_matrix(node->wsum_hess);
+    free_matrix(node->jacobian);
+    free_matrix(node->wsum_hess);
 
     /* free workspace */
     if (node->work)
     {
         free(node->work->dwork);
         free(node->work->iwork);
-        free_csc_matrix(node->work->jacobian_csc);
+        free_CSC_matrix(node->work->jacobian_csc);
         free(node->work->csc_work);
         free(node->work->local_jac_diag);
-        free_csr_matrix(node->work->hess_term1);
-        free_csr_matrix(node->work->hess_term2);
+        free_matrix(node->work->hess_term1);
+        free_matrix(node->work->hess_term2);
         free(node->work);
     }
 

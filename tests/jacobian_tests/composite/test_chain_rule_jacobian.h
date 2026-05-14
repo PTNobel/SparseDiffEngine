@@ -6,7 +6,7 @@
 #include "minunit.h"
 #include "numerical_diff.h"
 #include "test_helpers.h"
-#include "utils/CSR_Matrix.h"
+#include "utils/CSR_matrix.h"
 
 const char *test_jacobian_exp_sum(void)
 {
@@ -79,8 +79,8 @@ const char *test_jacobian_Ax_Bx_multiply(void)
     /* the first and last values are not used, but good to include them in test */
     double u_vals[4] = {1.0, 2.0, 3.0, 4.0};
 
-    CSR_Matrix *A = new_csr_random(2, 2, 1.0);
-    CSR_Matrix *B = new_csr_random(2, 2, 1.0);
+    CSR_matrix *A = new_csr_random(2, 2, 1.0);
+    CSR_matrix *B = new_csr_random(2, 2, 1.0);
     expr *x = new_variable(2, 1, 1, 4);
     expr *Ax = new_left_matmul(NULL, x, A);
     expr *Bx = new_left_matmul(NULL, x, B);
@@ -90,8 +90,8 @@ const char *test_jacobian_Ax_Bx_multiply(void)
               check_jacobian_num(multiply, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(multiply);
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     return 0;
 }
 
@@ -99,8 +99,8 @@ const char *test_jacobian_AX_BX_multiply(void)
 {
     double u_vals[4] = {1.0, 2.0, 3.0, 4.0};
 
-    CSR_Matrix *A = new_csr_random(2, 2, 1.0);
-    CSR_Matrix *B = new_csr_random(2, 2, 1.0);
+    CSR_matrix *A = new_csr_random(2, 2, 1.0);
+    CSR_matrix *B = new_csr_random(2, 2, 1.0);
     expr *X = new_variable(2, 2, 0, 4);
     expr *AX = new_left_matmul(NULL, X, A);
     expr *BX = new_left_matmul(NULL, X, B);
@@ -110,8 +110,8 @@ const char *test_jacobian_AX_BX_multiply(void)
               check_jacobian_num(multiply, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(multiply);
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     return 0;
 }
 
@@ -120,10 +120,10 @@ const char *test_jacobian_quad_form_Ax(void)
     /* (Ax)^T Q (Ax) where Q is symmetric */
     double u_vals[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
 
-    CSR_Matrix *A = new_csr_random(3, 4, 1.0);
+    CSR_matrix *A = new_csr_random(3, 4, 1.0);
 
     /* Q = [1 2 0; 2 3 0; 0 0 4] */
-    CSR_Matrix *Q = new_csr_matrix(3, 3, 5);
+    CSR_matrix *Q = new_CSR_matrix(3, 3, 5);
     double Qx[5] = {1.0, 2.0, 2.0, 3.0, 4.0};
     int Qi[5] = {0, 1, 0, 1, 2};
     int Qp[4] = {0, 2, 4, 5};
@@ -140,8 +140,8 @@ const char *test_jacobian_quad_form_Ax(void)
               check_jacobian_num(node, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(node);
-    free_csr_matrix(A);
-    free_csr_matrix(Q);
+    free_CSR_matrix(A);
+    free_CSR_matrix(Q);
     return 0;
 }
 
@@ -151,7 +151,7 @@ const char *test_jacobian_quad_form_exp(void)
     double u_vals[3] = {0.5, 1.0, 1.5};
 
     /* Q = [1 2 0; 2 3 0; 0 0 4] */
-    CSR_Matrix *Q = new_csr_matrix(3, 3, 5);
+    CSR_matrix *Q = new_CSR_matrix(3, 3, 5);
     double Qx[5] = {1.0, 2.0, 2.0, 3.0, 4.0};
     int Qi[5] = {0, 1, 0, 1, 2};
     int Qp[4] = {0, 2, 4, 5};
@@ -167,7 +167,7 @@ const char *test_jacobian_quad_form_exp(void)
               check_jacobian_num(node, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(node);
-    free_csr_matrix(Q);
+    free_CSR_matrix(Q);
     return 0;
 }
 
@@ -212,8 +212,8 @@ const char *test_jacobian_matmul_Ax_By(void)
     /* Z = (A @ X) @ (B @ Y) with constant matrices A, B */
     double u_vals[10] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
 
-    CSR_Matrix *A = new_csr_random(3, 2, 1.0);
-    CSR_Matrix *B = new_csr_random(2, 3, 1.0);
+    CSR_matrix *A = new_csr_random(3, 2, 1.0);
+    CSR_matrix *B = new_csr_random(2, 3, 1.0);
 
     expr *X = new_variable(2, 2, 0, 10);    /* 2x2, vars 0-3 */
     expr *Y = new_variable(3, 2, 4, 10);    /* 3x2, vars 4-9 */
@@ -225,8 +225,8 @@ const char *test_jacobian_matmul_Ax_By(void)
               check_jacobian_num(Z, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(Z);
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     return 0;
 }
 
@@ -235,8 +235,8 @@ const char *test_jacobian_matmul_sin_Ax_cos_Bx(void)
     /* Z = sin(A @ X) @ cos(B @ X), shared variable X */
     double u_vals[6] = {0.5, 1.0, 1.5, 2.0, 2.5, 3.0};
 
-    CSR_Matrix *A = new_csr_random(2, 3, 1.0);
-    CSR_Matrix *B = new_csr_random(2, 3, 1.0);
+    CSR_matrix *A = new_csr_random(2, 3, 1.0);
+    CSR_matrix *B = new_csr_random(2, 3, 1.0);
 
     expr *X = new_variable(3, 2, 0, 6);     /* 3x2, vars 0-5 */
     expr *AX = new_left_matmul(NULL, X, A); /* 2x2 */
@@ -249,8 +249,8 @@ const char *test_jacobian_matmul_sin_Ax_cos_Bx(void)
               check_jacobian_num(Z, u_vals, NUMERICAL_DIFF_DEFAULT_H));
 
     free_expr(Z);
-    free_csr_matrix(A);
-    free_csr_matrix(B);
+    free_CSR_matrix(A);
+    free_CSR_matrix(B);
     return 0;
 }
 

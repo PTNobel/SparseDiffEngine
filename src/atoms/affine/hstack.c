@@ -16,7 +16,9 @@
  * limitations under the License.
  */
 #include "atoms/affine.h"
+#include "subexpr.h"
 #include "utils/CSR_sum.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <assert.h>
 #include <stdio.h>
@@ -56,17 +58,16 @@ static void jacobian_init_impl(expr *node)
         nnz += hnode->args[i]->jacobian->nnz;
     }
 
-    node->jacobian = new_csr_matrix(node->size, node->n_vars, nnz);
+    CSR_matrix *A = new_CSR_matrix(node->size, node->n_vars, nnz);
 
     /* precompute sparsity pattern of this node's jacobian */
     int row_offset = 0;
-    CSR_Matrix *A = node->jacobian;
     A->nnz = 0;
 
     for (int i = 0; i < hnode->n_args; i++)
     {
         expr *child = hnode->args[i];
-        CSR_Matrix *B = child->jacobian;
+        CSR_matrix *B = child->jacobian->to_csr(child->jacobian);
 
         /* copy columns */
         memcpy(A->i + A->nnz, B->i, B->nnz * sizeof(int));
@@ -81,23 +82,22 @@ static void jacobian_init_impl(expr *node)
         row_offset += child->size;
     }
     A->p[node->size] = A->nnz;
+    node->jacobian = new_sparse_matrix(A);
 }
 
 static void eval_jacobian(expr *node)
 {
     hstack_expr *hnode = (hstack_expr *) node;
-    CSR_Matrix *A = node->jacobian;
-    A->nnz = 0;
+    node->jacobian->nnz = 0;
 
     for (int i = 0; i < hnode->n_args; i++)
     {
         expr *child = hnode->args[i];
         child->eval_jacobian(child);
-
         /* copy values */
-        memcpy(A->x + A->nnz, child->jacobian->x,
+        memcpy(node->jacobian->x + node->jacobian->nnz, child->jacobian->x,
                child->jacobian->nnz * sizeof(double));
-        A->nnz += child->jacobian->nnz;
+        node->jacobian->nnz += child->jacobian->nnz;
     }
 }
 
@@ -114,25 +114,24 @@ static void wsum_hess_init_impl(expr *node)
 
     /* worst-case scenario the nnz of node->wsum_hess is the sum of children's
        nnz */
-    node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, nnz);
-    hnode->CSR_work = new_csr_matrix(node->n_vars, node->n_vars, nnz);
+    CSR_matrix *H = new_CSR_matrix(node->n_vars, node->n_vars, nnz);
+    hnode->CSR_work = new_CSR_matrix(node->n_vars, node->n_vars, nnz);
 
     /* fill sparsity pattern */
-    CSR_Matrix *H = node->wsum_hess;
     H->nnz = 0;
-
     for (int i = 0; i < hnode->n_args; i++)
     {
-        expr *child = hnode->args[i];
-        copy_csr_matrix(H, hnode->CSR_work);
-        sum_csr_alloc(hnode->CSR_work, child->wsum_hess, H);
+        matrix *child_hess = hnode->args[i]->wsum_hess;
+        copy_CSR_matrix(H, hnode->CSR_work);
+        sum_csr_alloc(hnode->CSR_work, child_hess->to_csr(child_hess), H);
     }
+    node->wsum_hess = new_sparse_matrix(H);
 }
 
 static void wsum_hess_eval(expr *node, const double *w)
 {
     hstack_expr *hnode = (hstack_expr *) node;
-    CSR_Matrix *H = node->wsum_hess;
+    CSR_matrix *H = node->wsum_hess->to_csr(node->wsum_hess);
     int row_offset = 0;
     memset(H->x, 0, H->nnz * sizeof(double));
 
@@ -140,8 +139,9 @@ static void wsum_hess_eval(expr *node, const double *w)
     {
         expr *child = hnode->args[i];
         child->eval_wsum_hess(child, w + row_offset);
-        copy_csr_matrix(H, hnode->CSR_work);
-        sum_csr_fill_values(hnode->CSR_work, child->wsum_hess, H);
+        copy_CSR_matrix(H, hnode->CSR_work);
+        sum_csr_fill_values(hnode->CSR_work,
+                            child->wsum_hess->to_csr(child->wsum_hess), H);
         row_offset += child->size;
     }
 }
@@ -169,7 +169,7 @@ static void free_type_data(expr *node)
         hnode->args[i] = NULL;
     }
 
-    free_csr_matrix(hnode->CSR_work);
+    free_CSR_matrix(hnode->CSR_work);
     hnode->CSR_work = NULL;
     free(hnode->args);
     hnode->args = NULL;

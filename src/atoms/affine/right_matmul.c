@@ -17,11 +17,12 @@
  */
 #include "atoms/affine.h"
 #include "subexpr.h"
-#include "utils/CSR_Matrix.h"
-#include "utils/dense_matrix.h"
+#include "utils/CSR_matrix.h"
+#include "utils/mini_numpy.h"
 #include "utils/tracked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* This file implements the atom 'right_matmul' corresponding to the operation y =
    f(x) @ A, where A is a given matrix and f(x) is an arbitrary expression.
@@ -29,12 +30,12 @@
     transpose: f(x) @ A = (A^T @ f(x)^T)^T.
 
    For the parameter case:
-     - param_source stores A values in CSR data order
+     - param_source stores A values in CSR_matrix data order
      - inner left_matmul stores AT as its A-matrix and A as its AT-matrix
      - on refresh: update AT (inner's AT, the original A) from param_source,
        then recompute A^T (inner's A) from the updated A. */
 
-/* Refresh for sparse right_matmul: param stores A in CSR data order.
+/* Refresh for sparse right_matmul: param stores A in CSR_matrix data order.
    Inner left_matmul: lnode->A = AT (transposed), lnode->AT = A (original).
    So: update lnode->AT from param values, then recompute lnode->A. */
 static void refresh_dense_right(left_matmul_expr *lnode)
@@ -44,21 +45,21 @@ static void refresh_dense_right(left_matmul_expr *lnode)
        Furthermore, lnode->param_source->value corresponds to the column-major
        version of A, which is BT (an m x n matrix) */
 
-    Dense_Matrix *B = (Dense_Matrix *) lnode->AT;
-    Dense_Matrix *BT = (Dense_Matrix *) lnode->A;
-    int m = B->base.n;
-    int n = B->base.m;
+    matrix *B = lnode->AT;
+    matrix *BT = lnode->A;
+    int m = B->n;
+    int n = B->m;
 
     memcpy(BT->x, lnode->param_source->value, m * n * sizeof(double));
     A_transpose(B->x, BT->x, m, n);
 }
 
-expr *new_right_matmul(expr *param_node, expr *u, const CSR_Matrix *A)
+expr *new_right_matmul(expr *param_node, expr *u, const CSR_matrix *A)
 {
     /* We can express right matmul using left matmul and transpose:
        u @ A = (A^T @ u^T)^T. */
     int *work_transpose = (int *) SP_MALLOC(A->n * sizeof(int));
-    CSR_Matrix *AT = transpose(A, work_transpose);
+    CSR_matrix *AT = transpose(A, work_transpose);
 
     expr *u_transpose = new_transpose(u);
     expr *left_matmul = new_left_matmul(NULL, u_transpose, AT);
@@ -74,7 +75,7 @@ expr *new_right_matmul(expr *param_node, expr *u, const CSR_Matrix *A)
 
     expr *node = new_transpose(left_matmul);
 
-    free_csr_matrix(AT);
+    free_CSR_matrix(AT);
     free(work_transpose);
     return node;
 }

@@ -17,9 +17,10 @@
  */
 #include "atoms/elementwise_full_dom.h"
 #include "subexpr.h"
-#include "utils/CSC_Matrix.h"
-#include "utils/CSR_Matrix.h"
-#include "utils/CSR_sum.h"
+#include "utils/CSC_matrix.h"
+#include "utils/CSR_matrix.h"
+#include "utils/matrix_sum.h"
+#include "utils/sparse_matrix.h"
 #include "utils/tracked_alloc.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,20 +33,20 @@ void jacobian_init_elementwise(expr *node)
     /* if the variable is a child */
     if (child->var_id != NOT_A_VARIABLE)
     {
-        node->jacobian = new_csr_matrix(node->size, node->n_vars, node->size);
+        CSR_matrix *jac = new_CSR_matrix(node->size, node->n_vars, node->size);
         for (int j = 0; j < node->size; j++)
         {
-            node->jacobian->p[j] = j;
-            node->jacobian->i[j] = j + child->var_id;
+            jac->p[j] = j;
+            jac->i[j] = j + child->var_id;
         }
-        node->jacobian->p[node->size] = node->size;
+        jac->p[node->size] = node->size;
+        node->jacobian = new_sparse_matrix(jac);
     }
     else
     {
         /* jacobian of h(x) = f(g(x)) is Jf @ Jg, and here Jf is diagonal */
         jacobian_init(child);
-        CSR_Matrix *Jg = child->jacobian;
-        node->jacobian = new_csr_copy_sparsity(Jg);
+        node->jacobian = child->jacobian->copy_sparsity(child->jacobian);
         node->work->dwork = (double *) SP_MALLOC(node->size * sizeof(double));
         node->work->local_jac_diag =
             (double *) SP_MALLOC(node->size * sizeof(double));
@@ -64,11 +65,11 @@ void eval_jacobian_elementwise(expr *node)
     {
         /* jacobian of h(x) = f(g(x)) is Jf @ Jg, and here Jf is diagonal */
         child->eval_jacobian(child);
-        CSR_Matrix *Jg = child->jacobian;
         node->local_jacobian(node, node->work->local_jac_diag);
         memcpy(node->work->dwork, node->work->local_jac_diag,
                node->size * sizeof(double));
-        DA_fill_values(node->work->dwork, Jg, node->jacobian);
+        child->jacobian->DA_fill_values(node->work->dwork, child->jacobian,
+                                        node->jacobian);
     }
 }
 
@@ -81,18 +82,19 @@ void wsum_hess_init_elementwise(expr *node)
     /* if the variable is a child */
     if (id != NOT_A_VARIABLE)
     {
-        node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, node->size);
+        CSR_matrix *hess = new_CSR_matrix(node->n_vars, node->n_vars, node->size);
 
         for (i = 0; i < node->size; i++)
         {
-            node->wsum_hess->p[id + i] = i;
-            node->wsum_hess->i[i] = id + i;
+            hess->p[id + i] = i;
+            hess->i[i] = id + i;
         }
 
         for (i = id + node->size; i <= node->n_vars; i++)
         {
-            node->wsum_hess->p[i] = node->size;
+            hess->p[i] = node->size;
         }
+        node->wsum_hess = new_sparse_matrix(hess);
     }
     else
     {
@@ -101,28 +103,27 @@ void wsum_hess_init_elementwise(expr *node)
             term2 = sum_i (J_f^T w)_i^T Hg_i.
 
             For elementwise functions, D is diagonal. */
-        jacobian_csc_init(child);
-        CSC_Matrix *Jg = child->work->jacobian_csc;
-
         if (child->is_affine(child))
         {
-            node->wsum_hess = ATA_alloc(Jg);
+            node->wsum_hess = child->jacobian->ATA_alloc(child->jacobian);
         }
         else
         {
             /* term1: Jg^T @ D @ Jg */
-            node->work->hess_term1 = ATA_alloc(Jg);
+            node->work->hess_term1 = child->jacobian->ATA_alloc(child->jacobian);
 
-            /* term2: child's Hessian */
+            /* term2: child's Hessian (mirror its sparsity polymorphically) */
             wsum_hess_init(child);
-            CSR_Matrix *Hg = child->wsum_hess;
-            node->work->hess_term2 = new_csr_copy_sparsity(Hg);
+            node->work->hess_term2 =
+                child->wsum_hess->copy_sparsity(child->wsum_hess);
 
             /* wsum_hess = term1 + term2 */
-            int max_nnz = node->work->hess_term1->nnz + node->work->hess_term2->nnz;
-            node->wsum_hess = new_csr_matrix(node->n_vars, node->n_vars, max_nnz);
-            sum_csr_alloc(node->work->hess_term1, node->work->hess_term2,
-                          node->wsum_hess);
+            int max_nnz =
+                node->work->hess_term1->nnz + node->work->hess_term2->nnz;
+            node->wsum_hess =
+                new_sparse_matrix_alloc(node->n_vars, node->n_vars, max_nnz);
+            sum_matrices_alloc(node->work->hess_term1, node->work->hess_term2,
+                               node->wsum_hess);
         }
     }
 }
@@ -139,27 +140,27 @@ void eval_wsum_hess_elementwise(expr *node, const double *w)
     {
         if (child->is_affine(child))
         {
+            /* Refresh the child Jacobian's CSC_matrix mirror once; subsequent calls
+               skip since the affine child's values don't change. */
             if (!child->work->jacobian_csc_filled)
             {
-                csr_to_csc_fill_values(child->jacobian, child->work->jacobian_csc,
-                                       child->work->csc_work);
+                child->jacobian->refresh_csc_values(child->jacobian);
                 child->work->jacobian_csc_filled = true;
             }
 
             node->local_wsum_hess(node, node->work->dwork, w);
-            ATDA_fill_values(child->work->jacobian_csc, node->work->dwork,
-                             node->wsum_hess);
+            child->jacobian->ATDA_fill_values(child->jacobian, node->work->dwork,
+                                              node->wsum_hess);
         }
         else
         {
-            /* refresh CSC jacobian values */
-            csr_to_csc_fill_values(child->jacobian, child->work->jacobian_csc,
-                                   child->work->csc_work);
+            /* Non-affine child: values change every iteration, must refresh. */
+            child->jacobian->refresh_csc_values(child->jacobian);
 
             /* term1: Jg^T @ D @ Jg */
             node->local_wsum_hess(node, node->work->dwork, w);
-            ATDA_fill_values(child->work->jacobian_csc, node->work->dwork,
-                             node->work->hess_term1);
+            child->jacobian->ATDA_fill_values(child->jacobian, node->work->dwork,
+                                              node->work->hess_term1);
 
             /* term2: child Hessian with weight Jf^T w */
             memcpy(node->work->dwork, node->work->local_jac_diag,
@@ -174,8 +175,8 @@ void eval_wsum_hess_elementwise(expr *node, const double *w)
                    child->wsum_hess->nnz * sizeof(double));
 
             /* wsum_hess = term1 + term2 */
-            sum_csr_fill_values(node->work->hess_term1, node->work->hess_term2,
-                                node->wsum_hess);
+            sum_matrices_fill_values(node->work->hess_term1,
+                                     node->work->hess_term2, node->wsum_hess);
         }
     }
 }
