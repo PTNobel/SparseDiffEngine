@@ -67,6 +67,7 @@ problem *new_problem(expr *objective, expr **constraints, int n_constraints,
     /* Initialize statistics */
     prob->stats.time_init_derivatives = 0.0;
     prob->stats.time_eval_jacobian = 0.0;
+    prob->stats.time_eval_gradient = 0.0;
     prob->stats.time_eval_hessian = 0.0;
     prob->stats.time_forward_obj = 0.0;
     prob->stats.time_forward_constraints = 0.0;
@@ -182,6 +183,8 @@ static void problem_lagrange_hess_fill_sparsity(problem *prob, int *iwork)
 
 void problem_init_jacobian(problem *prob)
 {
+    if (prob->jacobian != NULL) return;
+
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
 
@@ -236,6 +239,8 @@ void problem_init_jacobian(problem *prob)
 
 void problem_init_hessian(problem *prob)
 {
+    if (prob->lagrange_hessian != NULL) return;
+
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
 
@@ -270,6 +275,8 @@ void problem_init_hessian(problem *prob)
 void problem_init_jacobian_coo(problem *prob)
 {
     problem_init_jacobian(prob);
+    if (prob->jacobian_coo != NULL) return;
+
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
     prob->jacobian_coo = new_COO_matrix(prob->jacobian);
@@ -280,6 +287,8 @@ void problem_init_jacobian_coo(problem *prob)
 void problem_init_hessian_coo_lower_triangular(problem *prob)
 {
     problem_init_hessian(prob);
+    if (prob->lagrange_hessian_coo != NULL) return;
+
     Timer timer;
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
     prob->lagrange_hessian_coo =
@@ -335,6 +344,8 @@ static inline void print_end_message(const Diff_engine_stats *stats)
            stats->time_init_derivatives);
     printf("  Jacobian evaluation:                 %8.3f\n",
            stats->time_eval_jacobian);
+    printf("  Gradient evaluation:                 %8.3f\n",
+           stats->time_eval_gradient);
     printf("  Hessian evaluation:                  %8.3f\n",
            stats->time_eval_hessian);
     printf("  Objective evaluation:                %8.3f\n",
@@ -343,8 +354,8 @@ static inline void print_end_message(const Diff_engine_stats *stats)
            stats->time_forward_constraints);
 
     double total_time = stats->time_init_derivatives + stats->time_eval_jacobian +
-                        stats->time_eval_hessian + stats->time_forward_obj +
-                        stats->time_forward_constraints;
+                        stats->time_eval_gradient + stats->time_eval_hessian +
+                        stats->time_forward_obj + stats->time_forward_constraints;
 
     printf("  ----------------------------------------------\n");
     printf("  Total differentiation time:          %8.3f\n", total_time);
@@ -354,9 +365,9 @@ void free_problem(problem *prob)
 {
     if (prob == NULL) return;
 
+    prob->stats.memory_bytes = g_peak_bytes;
     if (prob->verbose)
     {
-        prob->stats.memory_bytes = g_peak_bytes;
         print_end_message(&prob->stats);
     }
 
@@ -401,9 +412,6 @@ void problem_register_params(problem *prob, expr **param_nodes, int n_param_node
             exit(1);
         }
 
-        // TODO do we need to skip fixed params? maybe we adopt the convention
-        // that we don't ever register fixed params?
-        if (((parameter_expr *) param_nodes[i])->param_id == PARAM_FIXED) continue;
         prob->total_parameter_size += param_nodes[i]->size;
     }
 }
@@ -430,7 +438,6 @@ void problem_update_params(problem *prob, const double *theta)
             exit(1);
         }
 
-        if (param->param_id == PARAM_FIXED) continue;
         int offset = param->param_id;
         memcpy(pnode->value, theta + offset, pnode->size * sizeof(double));
     }
