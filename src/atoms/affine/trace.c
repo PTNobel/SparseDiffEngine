@@ -33,7 +33,7 @@ static void forward(expr *node, const double *u)
     expr *x = node->left;
 
     /* child's forward pass */
-    x->forward(x, u);
+    expr_forward(x, u);
 
     /* local forward pass */
     double sum = 0.0;
@@ -91,7 +91,7 @@ static void eval_jacobian(expr *node)
     trace_expr *tnode = (trace_expr *) node;
 
     /* evaluate child's jacobian */
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
 
     /* local jacobian */
     memset(node->jacobian->x, 0, node->jacobian->nnz * sizeof(double));
@@ -126,7 +126,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         node->work->dwork[i] = w[0];
     }
 
-    x->eval_wsum_hess(x, node->work->dwork);
+    expr_eval_wsum_hess(x, node->work->dwork);
 
     memcpy(node->wsum_hess->x, x->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));

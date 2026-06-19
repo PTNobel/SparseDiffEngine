@@ -19,12 +19,55 @@
 #include "utils/CSC_matrix.h"
 #include "utils/int_double_pair.h"
 #include "utils/tracked_alloc.h"
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
+static _Thread_local unsigned long current_forward_epoch = 0;
+static _Thread_local unsigned long current_jacobian_epoch = 0;
+static _Thread_local unsigned long current_wsum_hess_epoch = 0;
+
+static _Thread_local int forward_depth = 0;
+static _Thread_local int jacobian_depth = 0;
+static _Thread_local int wsum_hess_depth = 0;
+
+void expr_begin_forward_pass(void)
+{
+    if (forward_depth == 0) current_forward_epoch++;
+    forward_depth++;
+}
+
+void expr_end_forward_pass(void)
+{
+    forward_depth--;
+}
+
+void expr_begin_jacobian_pass(void)
+{
+    if (jacobian_depth == 0) current_jacobian_epoch++;
+    jacobian_depth++;
+}
+
+void expr_end_jacobian_pass(void)
+{
+    jacobian_depth--;
+}
+
+void expr_begin_wsum_hess_pass(void)
+{
+    if (wsum_hess_depth == 0) current_wsum_hess_epoch++;
+    wsum_hess_depth++;
+}
+
+void expr_end_wsum_hess_pass(void)
+{
+    wsum_hess_depth--;
+}
+
 void init_expr(expr *node, int d1, int d2, int n_vars, forward_fn forward,
-               jacobian_init_fn jacobian_init, eval_jacobian_fn eval_jacobian,
-               is_affine_fn is_affine, wsum_hess_init_fn wsum_hess_init,
+               jacobian_init_fn jacobian_init_impl,
+               eval_jacobian_fn eval_jacobian, is_affine_fn is_affine,
+               wsum_hess_init_fn wsum_hess_init_impl,
                wsum_hess_fn eval_wsum_hess, free_type_data_fn free_type_data)
 {
     node->d1 = d1;
@@ -35,10 +78,10 @@ void init_expr(expr *node, int d1, int d2, int n_vars, forward_fn forward,
     node->value = (double *) sp_calloc(d1 * d2, sizeof(double));
     node->var_id = NOT_A_VARIABLE;
     node->forward = forward;
-    node->jacobian_init_impl = jacobian_init;
+    node->jacobian_init_impl = jacobian_init_impl;
     node->eval_jacobian = eval_jacobian;
     node->is_affine = is_affine;
-    node->wsum_hess_init_impl = wsum_hess_init;
+    node->wsum_hess_init_impl = wsum_hess_init_impl;
     node->eval_wsum_hess = eval_wsum_hess;
     node->free_type_data = free_type_data;
     node->work = (Expr_Work *) sp_calloc(1, sizeof(Expr_Work));
@@ -89,11 +132,76 @@ void free_expr(expr *node)
         sp_free(node->work->local_jac_diag);
         free_matrix(node->work->hess_term1);
         free_matrix(node->work->hess_term2);
+        sp_free(node->work->wsum_hess_weight_cache);
         sp_free(node->work);
     }
 
     /* free the node itself */
     sp_free(node);
+}
+
+void expr_forward(expr *node, const double *u)
+{
+    if (node == NULL) return;
+
+    expr_begin_forward_pass();
+
+    if (node->work->forward_epoch != current_forward_epoch)
+    {
+        node->work->forward_epoch = current_forward_epoch;
+        node->forward(node, u);
+    }
+
+    expr_end_forward_pass();
+}
+
+void expr_eval_jacobian(expr *node)
+{
+    if (node == NULL) return;
+
+    expr_begin_jacobian_pass();
+
+    if (node->work->jacobian_epoch != current_jacobian_epoch)
+    {
+        node->work->jacobian_epoch = current_jacobian_epoch;
+        node->eval_jacobian(node);
+    }
+
+    expr_end_jacobian_pass();
+}
+
+void expr_eval_wsum_hess(expr *node, const double *w)
+{
+    bool cache_hit = false;
+
+    if (node == NULL) return;
+
+    expr_begin_wsum_hess_pass();
+
+    if (w != NULL && node->work->wsum_hess_epoch == current_wsum_hess_epoch &&
+        node->work->wsum_hess_weight_cache != NULL)
+    {
+        cache_hit = memcmp(node->work->wsum_hess_weight_cache, w,
+                           node->size * sizeof(double)) == 0;
+    }
+
+    if (!cache_hit)
+    {
+        node->eval_wsum_hess(node, w);
+        if (w != NULL)
+        {
+            if (node->work->wsum_hess_weight_cache == NULL)
+            {
+                node->work->wsum_hess_weight_cache =
+                    (double *) sp_malloc(node->size * sizeof(double));
+            }
+            memcpy(node->work->wsum_hess_weight_cache, w,
+                   node->size * sizeof(double));
+            node->work->wsum_hess_epoch = current_wsum_hess_epoch;
+        }
+    }
+
+    expr_end_wsum_hess_pass();
 }
 
 void jacobian_init(expr *node)

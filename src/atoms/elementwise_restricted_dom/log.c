@@ -20,7 +20,7 @@
 
 static void log_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     for (int i = 0; i < node->size; i++)
     {

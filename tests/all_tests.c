@@ -58,6 +58,7 @@
 #include "old-code/test_old_permuted_dense.h"
 #include "problem/test_param_broadcast.h"
 #include "problem/test_param_prob.h"
+#include "problem/test_dag_runtime_cache.h"
 #include "problem/test_problem.h"
 #include "utils/test_COO_matrix.h"
 #include "utils/test_alloc_overflow.h"
@@ -509,6 +510,7 @@ int main(void)
     mu_run_test(test_check_wsum_hess_exp_composite, tests_run);
 
     printf("\n--- Problem Struct Tests ---\n");
+    mu_run_test(test_shared_subexpression_runtime_cache, tests_run);
     mu_run_test(test_problem_new_free, tests_run);
     mu_run_test(test_problem_objective_forward, tests_run);
     mu_run_test(test_problem_gradient, tests_run);

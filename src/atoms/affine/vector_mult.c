@@ -35,14 +35,14 @@ static void forward(expr *node, const double *u)
        its values) */
     if (vnode->base.needs_parameter_refresh)
     {
-        vnode->param_source->forward(vnode->param_source, NULL);
+        expr_forward(vnode->param_source, NULL);
         vnode->base.needs_parameter_refresh = false;
     }
 
     const double *a = vnode->param_source->value;
 
     /* child's forward pass */
-    child->forward(child, u);
+    expr_forward(child, u);
 
     /* local forward pass: elementwise multiply by a */
     for (int i = 0; i < node->size; i++)
@@ -68,7 +68,7 @@ static void eval_jacobian(expr *node)
     const double *a = ((vector_mult_expr *) node)->param_source->value;
 
     /* evaluate jacobian of child */
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
 
     /* row-wise scale child's jacobian: diag(a) @ Jx */
     x->jacobian->DA_fill_values(a, x->jacobian, node->jacobian);
@@ -99,7 +99,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         node->work->dwork[i] = a[i] * w[i];
     }
 
-    x->eval_wsum_hess(x, node->work->dwork);
+    expr_eval_wsum_hess(x, node->work->dwork);
 
     /* copy values from child to this node */
     memcpy(node->wsum_hess->x, x->wsum_hess->x,

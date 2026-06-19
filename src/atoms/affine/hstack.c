@@ -33,7 +33,7 @@ static void forward(expr *node, const double *u)
     /* children's forward passes */
     for (int i = 0; i < hnode->n_args; i++)
     {
-        hnode->args[i]->forward(hnode->args[i], u);
+        expr_forward(hnode->args[i], u);
     }
 
     /* concatenate values horizontally */
@@ -94,7 +94,7 @@ static void eval_jacobian(expr *node)
     for (int i = 0; i < hnode->n_args; i++)
     {
         expr *child = hnode->args[i];
-        child->eval_jacobian(child);
+        expr_eval_jacobian(child);
         /* to_csr needed for stacked_pd */
         CSR_matrix *child_csr = child->jacobian->to_csr(child->jacobian);
         memcpy(node->jacobian->x + node->jacobian->nnz, child_csr->x,
@@ -141,7 +141,7 @@ static void wsum_hess_eval(expr *node, const double *w)
     for (int i = 0; i < hnode->n_args; i++)
     {
         expr *child = hnode->args[i];
-        child->eval_wsum_hess(child, w + row_offset);
+        expr_eval_wsum_hess(child, w + row_offset);
         copy_CSR_matrix(H, hnode->CSR_work);
         sum_csr_fill_values(hnode->CSR_work,
                             child->wsum_hess->to_csr(child->wsum_hess), H);

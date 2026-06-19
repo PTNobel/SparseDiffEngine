@@ -26,8 +26,8 @@
 static void forward(expr *node, const double *u)
 {
     /* children's forward passes */
-    node->left->forward(node->left, u);
-    node->right->forward(node->right, u);
+    expr_forward(node->left, u);
+    expr_forward(node->right, u);
 
     /* add left and right values */
     for (int i = 0; i < node->size; i++)
@@ -53,8 +53,8 @@ static void jacobian_init_impl(expr *node)
 static void eval_jacobian(expr *node)
 {
     /* evaluate children's jacobians */
-    node->left->eval_jacobian(node->left);
-    node->right->eval_jacobian(node->right);
+    expr_eval_jacobian(node->left);
+    expr_eval_jacobian(node->right);
 
     /* sum children's jacobians */
     sum_matrices_fill_values(node->left->jacobian, node->right->jacobian,
@@ -79,8 +79,8 @@ static void wsum_hess_init_impl(expr *node)
 static void eval_wsum_hess(expr *node, const double *w)
 {
     /* evaluate children's wsum_hess */
-    node->left->eval_wsum_hess(node->left, w);
-    node->right->eval_wsum_hess(node->right, w);
+    expr_eval_wsum_hess(node->left, w);
+    expr_eval_wsum_hess(node->right, w);
 
     /* sum children's wsum_hess */
     sum_matrices_fill_values(node->left->wsum_hess, node->right->wsum_hess,

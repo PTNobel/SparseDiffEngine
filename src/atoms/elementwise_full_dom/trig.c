@@ -21,7 +21,7 @@
 /* ----------------------- sin ----------------------- */
 static void sin_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     for (int i = 0; i < node->size; i++)
     {
         node->value[i] = sin(node->left->value[i]);
@@ -57,7 +57,7 @@ expr *new_sin(expr *child)
 /* ----------------------- cos ----------------------- */
 static void cos_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     for (int i = 0; i < node->size; i++)
     {
         node->value[i] = cos(node->left->value[i]);

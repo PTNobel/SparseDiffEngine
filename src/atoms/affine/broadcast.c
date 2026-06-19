@@ -35,7 +35,7 @@ static void forward(expr *node, const double *u)
     expr *x = node->left;
     broadcast_expr *bcast = (broadcast_expr *) node;
 
-    x->forward(x, u);
+    expr_forward(x, u);
 
     if (bcast->type == BROADCAST_ROW)
     {
@@ -79,7 +79,7 @@ static void jacobian_init_impl(expr *node)
 
 static void eval_jacobian(expr *node)
 {
-    node->left->eval_jacobian(node->left);
+    expr_eval_jacobian(node->left);
 
     /* fill values into the preallocated output. */
     broadcast_expr *bcast = (broadcast_expr *) node;
@@ -139,7 +139,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         }
     }
 
-    x->eval_wsum_hess(x, node->work->dwork);
+    expr_eval_wsum_hess(x, node->work->dwork);
     memcpy(node->wsum_hess->x, x->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

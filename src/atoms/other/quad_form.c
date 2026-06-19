@@ -55,12 +55,12 @@ static void forward(expr *node, const double *u)
     /* refresh Q from the parameter if needed (no-op on the constant/sparse path) */
     if (qnode->param_source != NULL && node->needs_parameter_refresh)
     {
-        qnode->param_source->forward(qnode->param_source, NULL);
+        expr_forward(qnode->param_source, NULL);
     }
     refresh_param_values_qf(qnode);
 
     /* child's forward pass */
-    x->forward(x, u);
+    expr_forward(x, u);
 
     /* dwork = Q @ x; value = x' (Q x) */
     matrix *Q = qnode->Q;
@@ -126,7 +126,7 @@ static void eval_jacobian(expr *node)
     else
     {
         /* jacobian = 2 * (Q @ f(x))^T @ J_f */
-        x->eval_jacobian(x);
+        expr_eval_jacobian(x);
 
         if (!x->work->jacobian_csc_filled)
         {
@@ -243,7 +243,7 @@ static void eval_wsum_hess_sparse(expr *node, const double *w)
         BTDA_fill_values(Jf, QJf, NULL, term1);
 
         /* term2 */
-        x->eval_wsum_hess(x, node->work->dwork);
+        expr_eval_wsum_hess(x, node->work->dwork);
         memcpy(node->work->hess_term2->x, x->wsum_hess->x,
                x->wsum_hess->nnz * sizeof(double));
 
@@ -344,7 +344,7 @@ static void eval_wsum_hess_dense(expr *node, const double *w)
                                   node->work->hess_term1);
 
         /* term2 = 2w sum_i (Q f(x))_i nabla^2 f_i (dwork = Q f(x) from forward) */
-        x->eval_wsum_hess(x, node->work->dwork);
+        expr_eval_wsum_hess(x, node->work->dwork);
         memcpy(node->work->hess_term2->x, x->wsum_hess->x,
                x->wsum_hess->nnz * sizeof(double));
         cblas_dscal(node->work->hess_term2->nnz, two_w, node->work->hess_term2->x,

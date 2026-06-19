@@ -22,7 +22,7 @@
 /* ----------------------- sinh ----------------------- */
 static void sinh_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     for (int i = 0; i < node->size; i++)
     {
         node->value[i] = sinh(node->left->value[i]);
@@ -58,7 +58,7 @@ expr *new_sinh(expr *child)
 /* ----------------------- tanh ----------------------- */
 static void tanh_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     for (int i = 0; i < node->size; i++)
     {
         node->value[i] = tanh(node->left->value[i]);
@@ -97,7 +97,7 @@ expr *new_tanh(expr *child)
 /* ----------------------- asinh ----------------------- */
 static void asinh_forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     for (int i = 0; i < node->size; i++)
     {
         node->value[i] = asinh(node->left->value[i]);

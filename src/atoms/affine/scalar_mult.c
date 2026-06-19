@@ -35,14 +35,14 @@ static void forward(expr *node, const double *u)
        its values) */
     if (snode->base.needs_parameter_refresh)
     {
-        snode->param_source->forward(snode->param_source, NULL);
+        expr_forward(snode->param_source, NULL);
         snode->base.needs_parameter_refresh = false;
     }
 
     double a = snode->param_source->value[0];
 
     /* child's forward pass */
-    child->forward(child, u);
+    expr_forward(child, u);
 
     /* local forward pass: multiply each element by scalar a */
     for (int i = 0; i < node->size; i++)
@@ -68,7 +68,7 @@ static void eval_jacobian(expr *node)
     double a = ((scalar_mult_expr *) node)->param_source->value[0];
 
     /* evaluate child */
-    child->eval_jacobian(child);
+    expr_eval_jacobian(child);
 
     /* scale child's jacobian */
     for (int j = 0; j < child->jacobian->nnz; j++)
@@ -91,7 +91,7 @@ static void wsum_hess_init_impl(expr *node)
 static void eval_wsum_hess(expr *node, const double *w)
 {
     expr *x = node->left;
-    x->eval_wsum_hess(x, w);
+    expr_eval_wsum_hess(x, w);
 
     double a = ((scalar_mult_expr *) node)->param_source->value[0];
     for (int j = 0; j < x->wsum_hess->nnz; j++)

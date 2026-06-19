@@ -22,7 +22,7 @@ static void forward(expr *node, const double *u)
 {
 
     /* child's forward pass */
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     double *x = node->left->value;
 

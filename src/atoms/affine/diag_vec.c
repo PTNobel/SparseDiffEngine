@@ -33,7 +33,7 @@ static void forward(expr *node, const double *u)
     int n = x->size;
 
     /* child's forward pass */
-    x->forward(x, u);
+    expr_forward(x, u);
 
     /* zero-initialize output, TODO: do we need to do this? */
     memset(node->value, 0, node->size * sizeof(double));
@@ -56,7 +56,7 @@ static void jacobian_init_impl(expr *node)
 
 static void eval_jacobian(expr *node)
 {
-    node->left->eval_jacobian(node->left);
+    expr_eval_jacobian(node->left);
 
     /* fill the diagonal rows of the preallocated output. */
     node->left->jacobian->diag_vec_fill_values(node->left->jacobian, node->jacobian);
@@ -89,7 +89,7 @@ static void eval_wsum_hess(expr *node, const double *w)
     }
 
     /* Evaluate child's Hessian with extracted weights */
-    x->eval_wsum_hess(x, node->work->dwork);
+    expr_eval_wsum_hess(x, node->work->dwork);
     memcpy(node->wsum_hess->x, x->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

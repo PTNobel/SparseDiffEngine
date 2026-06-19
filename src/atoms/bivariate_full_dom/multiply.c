@@ -40,8 +40,8 @@ static void forward(expr *node, const double *u)
     expr *y = node->right;
 
     /* children's forward passes */
-    x->forward(x, u);
-    y->forward(y, u);
+    expr_forward(x, u);
+    expr_forward(y, u);
 
     /* local forward pass */
     for (int i = 0; i < node->size; i++)
@@ -66,8 +66,8 @@ static void eval_jacobian(expr *node)
     expr *x = node->left;
     expr *y = node->right;
 
-    x->eval_jacobian(x);
-    y->eval_jacobian(y);
+    expr_eval_jacobian(x);
+    expr_eval_jacobian(y);
 
     /* chain rule: the jacobian of h(x) = f(g1(x), g2(x))) is Jh = J_{f, 1} J_{g1} +
      * J_{f, 2} J_{g2} */
@@ -271,7 +271,7 @@ static void eval_wsum_hess(expr *node, const double *w)
             {
                 node->work->dwork[i] = w[i] * y->value[i];
             }
-            x->eval_wsum_hess(x, node->work->dwork);
+            expr_eval_wsum_hess(x, node->work->dwork);
         }
 
         if (!is_y_affine)
@@ -280,7 +280,7 @@ static void eval_wsum_hess(expr *node, const double *w)
             {
                 node->work->dwork[i] = w[i] * x->value[i];
             }
-            y->eval_wsum_hess(y, node->work->dwork);
+            expr_eval_wsum_hess(y, node->work->dwork);
         }
 
         // ---------------------------------------------------------------

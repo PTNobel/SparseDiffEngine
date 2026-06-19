@@ -37,7 +37,7 @@ static void forward(expr *node, const double *u)
     int axis = snode->axis;
 
     /* child's forward pass */
-    x->forward(x, u);
+    expr_forward(x, u);
 
     if (axis == -1)
     {
@@ -99,7 +99,7 @@ static void eval_jacobian(expr *node)
     expr *child = node->left;
 
     /* evaluate child's jacobian */
-    child->eval_jacobian(child);
+    expr_eval_jacobian(child);
 
     /* we have precomputed an idx map between the nonzeros of the child's jacobian
        and this node's jacobian, so we just accumulate accordingly */
@@ -138,7 +138,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         tile_double(node->work->dwork, w, child->d1, child->d2);
     }
 
-    child->eval_wsum_hess(child, node->work->dwork);
+    expr_eval_wsum_hess(child, node->work->dwork);
 
     memcpy(node->wsum_hess->x, child->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));

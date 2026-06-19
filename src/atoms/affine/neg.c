@@ -24,7 +24,7 @@
 static void forward(expr *node, const double *u)
 {
     /* child's forward pass */
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     /* negate values */
     for (int i = 0; i < node->size; i++)
@@ -46,7 +46,7 @@ static void jacobian_init_impl(expr *node)
 static void eval_jacobian(expr *node)
 {
     /* evaluate child's jacobian */
-    node->left->eval_jacobian(node->left);
+    expr_eval_jacobian(node->left);
 
     /* negate values only (sparsity pattern set in jacobian_init_impl) */
     for (int k = 0; k < node->left->jacobian->nnz; k++)
@@ -69,7 +69,7 @@ static void wsum_hess_init_impl(expr *node)
 static void eval_wsum_hess(expr *node, const double *w)
 {
     /* For f(x) = -g(x): d²f/dx² = -d²g/dx² */
-    node->left->eval_wsum_hess(node->left, w);
+    expr_eval_wsum_hess(node->left, w);
 
     /* negate values (sparsity pattern set in wsum_hess_init_impl) */
     for (int k = 0; k < node->left->wsum_hess->nnz; k++)

@@ -25,7 +25,7 @@
 static void forward(expr *node, const double *u)
 {
     /* forward pass for child */
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     /* local forward pass */
     int d1 = node->d1;
@@ -59,7 +59,7 @@ static void jacobian_init_impl(expr *node)
 static void eval_jacobian(expr *node)
 {
     expr *child = node->left;
-    child->eval_jacobian(child);
+    expr_eval_jacobian(child);
     child->jacobian->index_fill_values(child->jacobian, node->work->iwork,
                                        node->size, node->jacobian);
 }
@@ -90,7 +90,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         }
     }
 
-    node->left->eval_wsum_hess(node->left, node->work->dwork);
+    expr_eval_wsum_hess(node->left, node->work->dwork);
 
     /* copy to this node's hessian */
     memcpy(node->wsum_hess->x, node->left->wsum_hess->x,

@@ -30,7 +30,7 @@ static const double INV_SQRT_2PI = 0.3989422804014326779399461;
 
 static void forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     double *x = node->left->value;
     for (int i = 0; i < node->size; i++)

@@ -49,7 +49,7 @@ static void forward(expr *node, const double *u)
     index_expr *idx = (index_expr *) node;
 
     /* child's forward pass */
-    x->forward(x, u);
+    expr_forward(x, u);
 
     /* gather selected elements */
     for (int i = 0; i < idx->n_idxs; i++)
@@ -74,7 +74,7 @@ static void eval_jacobian(expr *node)
 {
     expr *x = node->left;
     index_expr *idx = (index_expr *) node;
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
 
     /* copy values of the selected rows into the preallocated output */
     x->jacobian->index_fill_values(x->jacobian, idx->indices, idx->n_idxs,
@@ -124,7 +124,7 @@ static void eval_wsum_hess(expr *node, const double *w)
     }
 
     /* evalute hessian of child */
-    x->eval_wsum_hess(x, node->work->dwork);
+    expr_eval_wsum_hess(x, node->work->dwork);
     memcpy(node->wsum_hess->x, x->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

@@ -70,7 +70,7 @@ static void forward(expr *node, const double *u)
     /* call forward on param_source if it exists and needs refresh */
     if (lnode->param_source != NULL && lnode->base.needs_parameter_refresh)
     {
-        lnode->param_source->forward(lnode->param_source, NULL);
+        expr_forward(lnode->param_source, NULL);
     }
 
     refresh_param_values(lnode);
@@ -78,7 +78,7 @@ static void forward(expr *node, const double *u)
     expr *x = node->left;
 
     /* child's forward pass */
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     /* y = A_kron @ vec(f(x)) */
     matrix *A = lnode->A;
@@ -136,7 +136,7 @@ static void eval_jacobian_dense(expr *node)
     /* evaluate jacobian of child */
     left_matmul_expr *lnode = (left_matmul_expr *) node;
     expr *x = node->left;
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
 
     /* must refresh CSC cache if x->jacobian is sparse_matrix */
     x->jacobian->refresh_csc_values(x->jacobian);
@@ -177,7 +177,7 @@ static void eval_jacobian_sparse(expr *node)
     /* evaluate jacobian of child */
     left_matmul_expr *lnode = (left_matmul_expr *) node;
     expr *x = node->left;
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
 
     /* evaluate this node's jacobian */
     CSC_matrix *Jchild_CSC = lnode->Jchild_CSC;
@@ -213,7 +213,7 @@ static void eval_wsum_hess(expr *node, const double *w)
     int n_blocks = lnode->n_blocks;
     AT->block_left_mult_vec(AT, w, node->work->dwork, n_blocks);
 
-    node->left->eval_wsum_hess(node->left, node->work->dwork);
+    expr_eval_wsum_hess(node->left, node->work->dwork);
     memcpy(node->wsum_hess->x, node->left->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

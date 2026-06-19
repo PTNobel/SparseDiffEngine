@@ -55,6 +55,11 @@ typedef struct
     double *local_jac_diag; /* cached f'(g(x)) diagonal */
     matrix *hess_term1;     /* Jg^T D Jg workspace */
     matrix *hess_term2;     /* child wsum_hess workspace */
+
+    unsigned long forward_epoch;
+    unsigned long jacobian_epoch;
+    unsigned long wsum_hess_epoch;
+    double *wsum_hess_weight_cache;
 } Expr_Work;
 
 /* Base expression node structure */
@@ -100,11 +105,24 @@ typedef struct expr
 } expr;
 
 void init_expr(expr *node, int d1, int d2, int n_vars, forward_fn forward,
-               jacobian_init_fn jacobian_init, eval_jacobian_fn eval_jacobian,
-               is_affine_fn is_affine, wsum_hess_init_fn wsum_hess_init,
+               jacobian_init_fn jacobian_init_impl,
+               eval_jacobian_fn eval_jacobian, is_affine_fn is_affine,
+               wsum_hess_init_fn wsum_hess_init_impl,
                wsum_hess_fn eval_wsum_hess, free_type_data_fn free_type_data);
 
 void free_expr(expr *node);
+
+/* Runtime evaluation wrappers. These make recursive runtime evaluation
+ * DAG-aware by skipping nodes already evaluated in the current pass. */
+void expr_begin_forward_pass(void);
+void expr_end_forward_pass(void);
+void expr_begin_jacobian_pass(void);
+void expr_end_jacobian_pass(void);
+void expr_begin_wsum_hess_pass(void);
+void expr_end_wsum_hess_pass(void);
+void expr_forward(expr *node, const double *u);
+void expr_eval_jacobian(expr *node);
+void expr_eval_wsum_hess(expr *node, const double *w);
 
 /* Guarded init: skips if already initialized (safe for DAGs
  * where a node may be visited through multiple parents). */

@@ -30,7 +30,7 @@ static void forward(expr *node, const double *u)
     linear_op_expr *lin_node = (linear_op_expr *) node;
 
     /* child's forward pass */
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     /* y = A * x (A is stored as node->jacobian) */
     Ax_csr(node->jacobian->to_csr(node->jacobian), x->value, node->value, x->var_id);

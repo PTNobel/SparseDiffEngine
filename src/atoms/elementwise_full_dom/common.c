@@ -64,7 +64,7 @@ void eval_jacobian_elementwise(expr *node)
     else
     {
         /* jacobian of h(x) = f(g(x)) is Jf @ Jg, and here Jf is diagonal */
-        child->eval_jacobian(child);
+        expr_eval_jacobian(child);
         node->local_jacobian(node, node->work->local_jac_diag);
         memcpy(node->work->dwork, node->work->local_jac_diag,
                node->size * sizeof(double));
@@ -169,7 +169,7 @@ void eval_wsum_hess_elementwise(expr *node, const double *w)
                 node->work->dwork[k] *= w[k];
             }
 
-            child->eval_wsum_hess(child, node->work->dwork);
+            expr_eval_wsum_hess(child, node->work->dwork);
             memcpy(node->work->hess_term2->x, child->wsum_hess->x,
                    child->wsum_hess->nnz * sizeof(double));
 

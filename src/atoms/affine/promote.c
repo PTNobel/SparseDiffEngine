@@ -26,7 +26,7 @@
 
 static void forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
 
     /* broadcast scalar value to all output elements */
     for (int i = 0; i < node->size; i++)
@@ -47,7 +47,7 @@ static void jacobian_init_impl(expr *node)
 
 static void eval_jacobian(expr *node)
 {
-    node->left->eval_jacobian(node->left);
+    expr_eval_jacobian(node->left);
 
     /* tile the child's single row into the preallocated output. */
     node->left->jacobian->promote_fill_values(node->left->jacobian, node->jacobian);
@@ -69,7 +69,7 @@ static void eval_wsum_hess(expr *node, const double *w)
     }
 
     /* evaluate child's wsum_hess with summed weight */
-    node->left->eval_wsum_hess(node->left, &sum_w);
+    expr_eval_wsum_hess(node->left, &sum_w);
 
     /* copy values */
     memcpy(node->wsum_hess->x, node->left->wsum_hess->x,

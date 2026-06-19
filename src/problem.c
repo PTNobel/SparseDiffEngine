@@ -459,7 +459,7 @@ double problem_objective_forward(problem *prob, const double *u)
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
 
     /* Evaluate objective only */
-    prob->objective->forward(prob->objective, u);
+    expr_forward(prob->objective, u);
     double result = prob->objective->value[0];
 
     clock_gettime(CLOCK_MONOTONIC, &timer.end);
@@ -475,13 +475,15 @@ void problem_constraint_forward(problem *prob, const double *u)
 
     /* Evaluate constraints only and copy values */
     int offset = 0;
+    expr_begin_forward_pass();
     for (int i = 0; i < prob->n_constraints; i++)
     {
         expr *c = prob->constraints[i];
-        c->forward(c, u);
+        expr_forward(c, u);
         memcpy(prob->constraint_values + offset, c->value, c->size * sizeof(double));
         offset += c->size;
     }
+    expr_end_forward_pass();
 
     clock_gettime(CLOCK_MONOTONIC, &timer.end);
     prob->stats.time_forward_constraints += GET_ELAPSED_SECONDS(timer);
@@ -493,7 +495,7 @@ void problem_gradient(problem *prob)
     clock_gettime(CLOCK_MONOTONIC, &timer.start);
 
     /* evaluate jacobian of objective */
-    prob->objective->eval_jacobian(prob->objective);
+    expr_eval_jacobian(prob->objective);
 
     /* copy sparse jacobian to dense gradient */
     memset(prob->gradient_values, 0, prob->n_vars * sizeof(double));
@@ -516,6 +518,7 @@ void problem_jacobian(problem *prob)
     CSR_matrix *J = prob->jacobian;
     int nnz_offset = 0;
 
+    expr_begin_jacobian_pass();
     for (int i = 0; i < prob->n_constraints; i++)
     {
         expr *c = prob->constraints[i];
@@ -526,10 +529,11 @@ void problem_jacobian(problem *prob)
             continue;
         }
 
-        c->eval_jacobian(c);
+        expr_eval_jacobian(c);
         memcpy(J->x + nnz_offset, c->jacobian->x, c->jacobian->nnz * sizeof(double));
         nnz_offset += c->jacobian->nnz;
     }
+    expr_end_jacobian_pass();
 
     /* update actual nnz (may be less than allocated) */
     J->nnz = nnz_offset;
@@ -548,7 +552,8 @@ void problem_hessian(problem *prob, double obj_w, const double *w)
     //             evaluate hessian of objective and constraints
     // ------------------------------------------------------------------------
     expr *obj = prob->objective;
-    obj->eval_wsum_hess(obj, &obj_w);
+    expr_begin_wsum_hess_pass();
+    expr_eval_wsum_hess(obj, &obj_w);
 
     int offset = 0;
     expr **constrs = prob->constraints;
@@ -560,9 +565,10 @@ void problem_hessian(problem *prob, double obj_w, const double *w)
             offset += constrs[i]->size;
             continue;
         }
-        constrs[i]->eval_wsum_hess(constrs[i], w + offset);
+        expr_eval_wsum_hess(constrs[i], w + offset);
         offset += constrs[i]->size;
     }
+    expr_end_wsum_hess_pass();
 
     // ------------------------------------------------------------------------
     //           assemble Lagrange hessian using index map

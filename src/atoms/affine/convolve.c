@@ -39,7 +39,7 @@ static void forward(expr *node, const double *u)
 
     if (cnode->base.needs_parameter_refresh)
     {
-        cnode->param_source->forward(cnode->param_source, NULL);
+        expr_forward(cnode->param_source, NULL);
         /* refresh the convolution matrix values if it exists (necessary to check
            for null in case someone calls forward before initializing the jacobian,
            which might happen when we expose Python bindings to SparseDiffEngine) */
@@ -50,7 +50,7 @@ static void forward(expr *node, const double *u)
         cnode->base.needs_parameter_refresh = false;
     }
 
-    child->forward(child, u);
+    expr_forward(child, u);
 
     const double *a = cnode->param_source->value;
     const double *x = child->value;
@@ -93,7 +93,7 @@ static void eval_jacobian(expr *node)
     expr *child = node->left;
     convolve_expr *cnode = (convolve_expr *) node;
 
-    child->eval_jacobian(child);
+    expr_eval_jacobian(child);
 
     /* J = T @ J_child */
     csr_to_csc_fill_values(child->jacobian->to_csr(child->jacobian),
@@ -130,7 +130,7 @@ static void eval_wsum_hess(expr *node, const double *w)
         w_prime[j] = sum;
     }
 
-    child->eval_wsum_hess(child, w_prime);
+    expr_eval_wsum_hess(child, w_prime);
     memcpy(node->wsum_hess->x, child->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

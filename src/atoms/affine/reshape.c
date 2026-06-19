@@ -28,7 +28,7 @@
 
 static void forward(expr *node, const double *u)
 {
-    node->left->forward(node->left, u);
+    expr_forward(node->left, u);
     memcpy(node->value, node->left->value, node->size * sizeof(double));
 }
 
@@ -42,7 +42,7 @@ static void jacobian_init_impl(expr *node)
 static void eval_jacobian(expr *node)
 {
     expr *x = node->left;
-    x->eval_jacobian(x);
+    expr_eval_jacobian(x);
     memcpy(node->jacobian->x, x->jacobian->x, x->jacobian->nnz * sizeof(double));
 }
 
@@ -56,7 +56,7 @@ static void wsum_hess_init_impl(expr *node)
 static void eval_wsum_hess(expr *node, const double *w)
 {
     expr *x = node->left;
-    x->eval_wsum_hess(x, w);
+    expr_eval_wsum_hess(x, w);
     memcpy(node->wsum_hess->x, x->wsum_hess->x,
            node->wsum_hess->nnz * sizeof(double));
 }

@@ -21,7 +21,7 @@
 static void entr_forward(expr *node, const double *u)
 {
     expr *child = node->left;
-    child->forward(child, u);
+    expr_forward(child, u);
 
     for (int i = 0; i < node->size; i++)
     {

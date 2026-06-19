@@ -94,8 +94,8 @@ static void forward(expr *node, const double *u)
     expr *y = node->right;
 
     /* children's forward passes */
-    x->forward(x, u);
-    y->forward(y, u);
+    expr_forward(x, u);
+    expr_forward(y, u);
 
     /* local forward pass */
     int m = x->d1, k = x->d2, n = y->d2;
@@ -257,8 +257,8 @@ static void eval_jacobian_chain_rule(expr *node)
     int n = g->d2;
 
     /* evaluate Jacobians of children */
-    f->eval_jacobian(f);
-    g->eval_jacobian(g);
+    expr_eval_jacobian(f);
+    expr_eval_jacobian(g);
     csr_to_csc_fill_values(f->jacobian->to_csr(f->jacobian), f->work->jacobian_csc,
                            f->work->csc_work);
     csr_to_csc_fill_values(g->jacobian->to_csr(g->jacobian), g->work->jacobian_csc,
@@ -528,14 +528,14 @@ static void eval_wsum_hess_chain_rule(expr *node, const double *w)
     if (!is_f_affine)
     {
         Y_kron_I_vec(m, k, n, g->value, w, node->work->dwork);
-        f->eval_wsum_hess(f, node->work->dwork);
+        expr_eval_wsum_hess(f, node->work->dwork);
     }
 
     /* compute Hessian of g */
     if (!is_g_affine)
     {
         I_kron_XT_vec(m, k, n, f->value, w, node->work->dwork);
-        g->eval_wsum_hess(g, node->work->dwork);
+        expr_eval_wsum_hess(g, node->work->dwork);
     }
 
     /* accumulate H = C + C^T + H_f + H_g */
